@@ -1,8 +1,11 @@
 package com.p99softtraining.hiresense.service;
 
+import com.p99softtraining.hiresense.dto.request.LoginRequest;
 import com.p99softtraining.hiresense.dto.request.RegisterRequest;
-import com.p99softtraining.hiresense.dto.response.UserResponse;
+import com.p99softtraining.hiresense.dto.response.AuthResponse;
 
 public interface UserService {
-    UserResponse register(RegisterRequest request);
+    AuthResponse register(RegisterRequest request);
+
+    AuthResponse login(LoginRequest loginRequest);
 }
