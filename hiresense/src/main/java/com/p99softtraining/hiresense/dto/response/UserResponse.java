@@ -18,4 +18,7 @@ public class UserResponse {
 
     private Role role;
 
+    private UUID companyId;
+
+    private String companyName;
 }
