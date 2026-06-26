@@ -7,37 +7,23 @@ import com.p99softtraining.hiresense.dto.response.RowErrorResponse;
 import com.p99softtraining.hiresense.entity.Candidate;
 import com.p99softtraining.hiresense.entity.Company;
 import com.p99softtraining.hiresense.entity.HiringDrive;
-import com.p99softtraining.hiresense.entity.User;
-import com.p99softtraining.hiresense.enums.CandidateStatus;
 import com.p99softtraining.hiresense.exception.ResourceAlreadyExistsException;
 import com.p99softtraining.hiresense.exception.ResourceNotFoundException;
+import com.p99softtraining.hiresense.mapper.CandidateMapper;
+import com.p99softtraining.hiresense.parser.CandidateFileParser;
+import com.p99softtraining.hiresense.parser.ParsedCandidateData;
+import com.p99softtraining.hiresense.parser.ParsedRow;
 import com.p99softtraining.hiresense.repository.CandidateRepository;
 import com.p99softtraining.hiresense.repository.HiringDriveRepository;
-import com.p99softtraining.hiresense.repository.UserRepository;
 import com.p99softtraining.hiresense.service.CandidateService;
-
+import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
-
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-
-import static com.p99softtraining.hiresense.mapper.CandidatesExcelMapper.FIELD_MAPPINGS;
 
 @Service
 @RequiredArgsConstructor
@@ -45,7 +31,9 @@ public class CandidateServiceImpl implements CandidateService {
 
     private final CandidateRepository candidateRepository;
     private final HiringDriveRepository hiringDriveRepository;
-    private final UserRepository userRepository;
+    private final SecurityService securityService;
+    private final CandidateMapper candidateMapper;
+    private final List<CandidateFileParser> fileParsers;
 
     @Override
     public CandidateResponse createCandidate(
@@ -62,19 +50,9 @@ public class CandidateServiceImpl implements CandidateService {
             throw new ResourceAlreadyExistsException("Candidate email already exists in this hiring drive");
         }
 
-        Candidate candidate = new Candidate();
-        candidate.setHiringDrive(hiringDrive);
-        candidate.setFullName(request.getFullName());
-        candidate.setEmail(request.getEmail());
-        candidate.setPhone(request.getPhone());
-        candidate.setCollegeName(request.getCollegeName());
-        candidate.setDegree(request.getDegree());
-        candidate.setBranch(request.getBranch());
-        candidate.setGraduationYear(request.getGraduationYear());
-        candidate.setResumeUrl(request.getResumeUrl());
-        candidate.setStatus(CandidateStatus.IMPORTED);
+        Candidate candidate = candidateMapper.toEntity(request, hiringDrive);
 
-        return mapCandidate(candidateRepository.save(candidate));
+        return candidateMapper.toResponse(candidateRepository.save(candidate));
     }
 
     @Override
@@ -84,13 +62,13 @@ public class CandidateServiceImpl implements CandidateService {
 
         return candidateRepository.findByHiringDriveIdOrderByCreatedAtDesc(hiringDrive.getId())
                 .stream()
-                .map(this::mapCandidate)
+                .map(candidateMapper::toResponse)
                 .toList();
     }
 
     private HiringDrive getCompanyHiringDrive(UUID hiringDriveId) {
 
-        Company company = getCurrentUserCompany();
+        Company company = securityService.getCurrentUserCompany();
 
         HiringDrive hiringDrive = hiringDriveRepository.findById(hiringDriveId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hiring drive not found"));
@@ -102,283 +80,60 @@ public class CandidateServiceImpl implements CandidateService {
         return hiringDrive;
     }
 
-    private Company getCurrentUserCompany() {
-
-        String email = SecurityContextHolder.getContext()
-                .getAuthentication()
-                .getName();
-
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("Current user not found"));
-
-        if (user.getCompany() == null) {
-            throw new IllegalArgumentException("Current user is not assigned to a company");
-        }
-
-        return user.getCompany();
-    }
-
-    private CandidateResponse mapCandidate(Candidate candidate) {
-
-        HiringDrive hiringDrive = candidate.getHiringDrive();
-
-        return CandidateResponse.builder()
-                .id(candidate.getId())
-                .hiringDriveId(hiringDrive.getId())
-                .hiringDriveTitle(hiringDrive.getTitle())
-                .fullName(candidate.getFullName())
-                .email(candidate.getEmail())
-                .phone(candidate.getPhone())
-                .collegeName(candidate.getCollegeName())
-                .degree(candidate.getDegree())
-                .branch(candidate.getBranch())
-                .graduationYear(candidate.getGraduationYear())
-                .resumeUrl(candidate.getResumeUrl())
-                .status(candidate.getStatus())
-                .build();
-    }
-
-
     @Override
     public ExcelUploadResponse uploadCandidatesFromExcel(
             UUID hiringDriveId,
             MultipartFile file
     ) {
 
+        CandidateFileParser parser = fileParsers.stream()
+                .filter(p -> p.supports(file.getContentType(), file.getOriginalFilename()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported file type. Please upload an Excel file."));
+
+        ParsedCandidateData parsedData;
+        try {
+            parsedData = parser.parse(file);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to process Excel file", e);
+        }
+
+        if (!parsedData.getMissingColumns().isEmpty()) {
+            return ExcelUploadResponse.builder()
+                    .totalRows(0)
+                    .successCount(0)
+                    .failedCount(0)
+                    .missingColumns(parsedData.getMissingColumns())
+                    .errors(List.of())
+                    .build();
+        }
+
         int successCount = 0;
         int failedCount = 0;
-
         List<RowErrorResponse> errors = new ArrayList<>();
 
-        List<String> missingFields = new ArrayList<>();
-
-        try (
-                Workbook workbook =
-                        new XSSFWorkbook(file.getInputStream())
-        ) {
-
-            Sheet sheet = workbook.getSheetAt(0);
-
-            Row headerRow = sheet.getRow(0);
-
-            Map<String, Integer> excelHeaders =
-                    new HashMap<>();
-
-            for (Cell cell : headerRow) {
-
-                String header = normalize(
-                        cell.getStringCellValue()
-                );
-
-                excelHeaders.put(
-                        header,
-                        cell.getColumnIndex()
-                );
+        for (ParsedRow row : parsedData.getRows()) {
+            if (row.getErrorMessage() != null) {
+                failedCount++;
+                errors.add(new RowErrorResponse(row.getRowNumber(), row.getErrorMessage()));
+                continue;
             }
 
-            Map<String, Integer> resolvedColumns =
-                    new HashMap<>();
-
-            for (Map.Entry<String, List<String>> entry
-                    : FIELD_MAPPINGS.entrySet()) {
-
-                String dtoField = entry.getKey();
-
-                for (String alias : entry.getValue()) {
-
-                    Integer index =
-                            excelHeaders.get(normalize(alias));
-
-                    if (index != null) {
-
-                        resolvedColumns.put(
-                                dtoField,
-                                index
-                        );
-
-                        break;
-                    }
-                }
+            try {
+                createCandidate(hiringDriveId, row.getRequest());
+                successCount++;
+            } catch (Exception e) {
+                failedCount++;
+                errors.add(new RowErrorResponse(row.getRowNumber(), e.getMessage()));
             }
-
-            List<String> requiredFields = List.of(
-                    "fullName",
-                    "email",
-                    "phone"
-            );
-
-            for (String field : requiredFields) {
-
-                if (!resolvedColumns.containsKey(field)) {
-
-                    missingFields.add(field);
-                }
-            }
-
-            if (!missingFields.isEmpty()) {
-
-                return ExcelUploadResponse.builder()
-                        .totalRows(0)
-                        .successCount(0)
-                        .failedCount(0)
-                        .missingColumns(missingFields)
-                        .errors(List.of())
-                        .build();
-            }
-
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-
-                Row row = sheet.getRow(i);
-
-                if (row == null) {
-                    continue;
-                }
-
-                try {
-
-                    CreateCandidateRequest request =
-                            new CreateCandidateRequest();
-
-                    request.setFullName(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("fullName")
-                                    )
-                            )
-                    );
-
-                    request.setEmail(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("email")
-                                    )
-                            )
-                    );
-
-                    request.setPhone(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("phone")
-                                    )
-                            )
-                    );
-
-                    request.setCollegeName(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("collegeName")
-                                    )
-                            )
-                    );
-
-                    request.setDegree(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("degree")
-                                    )
-                            )
-                    );
-
-                    request.setBranch(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("branch")
-                                    )
-                            )
-                    );
-
-                    String graduationYear =
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("graduationYear")
-                                    )
-                            );
-
-                    request.setGraduationYear(
-                            graduationYear.isBlank()
-                                    ? null
-                                    : Integer.parseInt(graduationYear)
-                    );
-
-                    request.setResumeUrl(
-                            getCellValue(
-                                    row.getCell(
-                                            resolvedColumns.get("resumeUrl")
-                                    )
-                            )
-                    );
-
-                    createCandidate(hiringDriveId, request);
-
-                    successCount++;
-
-                } catch (Exception e) {
-
-                    failedCount++;
-
-                    errors.add(
-                            new RowErrorResponse(
-                                    i + 1,
-                                    e.getMessage()
-                            )
-                    );
-                }
-            }
-
-            return ExcelUploadResponse.builder()
-                    .totalRows(sheet.getLastRowNum())
-                    .successCount(successCount)
-                    .failedCount(failedCount)
-                    .missingColumns(missingFields)
-                    .errors(errors)
-                    .build();
-
-        } catch (Exception e) {
-
-            throw new RuntimeException(
-                    "Failed to process Excel file",
-                    e
-            );
-        }
-    }
-
-    private String getCellValue(Cell cell) {
-
-        if (cell == null) {
-            return "";
         }
 
-        return switch (cell.getCellType()) {
-
-            case STRING ->
-                    cell.getStringCellValue().trim();
-
-            case NUMERIC -> {
-
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    yield cell.getDateCellValue().toString();
-                }
-
-                yield String.valueOf(
-                        (long) cell.getNumericCellValue()
-                );
-            }
-
-            case BOOLEAN ->
-                    String.valueOf(
-                            cell.getBooleanCellValue()
-                    );
-
-            default -> "";
-        };
+        return ExcelUploadResponse.builder()
+                .totalRows(parsedData.getTotalRows())
+                .successCount(successCount)
+                .failedCount(failedCount)
+                .missingColumns(parsedData.getMissingColumns())
+                .errors(errors)
+                .build();
     }
-
-    private String normalize(String value) {
-
-        return value.trim()
-                .toLowerCase()
-                .replace("_", " ")
-                .replace("-", " ");
-    }
-
 }
