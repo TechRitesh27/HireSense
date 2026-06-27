@@ -1,6 +1,7 @@
 package com.p99softtraining.hiresense.service.impl;
 
 import com.p99softtraining.hiresense.dto.request.CreateHiringDriveRequest;
+import com.p99softtraining.hiresense.dto.request.UpdateHiringDriveStatusRequest;
 import com.p99softtraining.hiresense.dto.response.HiringDriveResponse;
 import com.p99softtraining.hiresense.entity.Company;
 import com.p99softtraining.hiresense.entity.HiringDrive;
@@ -13,8 +14,10 @@ import com.p99softtraining.hiresense.service.HiringDriveService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +52,23 @@ public class HiringDriveServiceImpl implements HiringDriveService {
                 .stream()
                 .map(this::mapHiringDrive)
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public HiringDriveResponse updateStatus(UUID hiringDriveId, UpdateHiringDriveStatusRequest request) {
+
+        Company company = getCurrentUserCompany();
+
+        HiringDrive hiringDrive = hiringDriveRepository.findById(hiringDriveId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hiring drive not found"));
+
+        if (!hiringDrive.getCompany().getId().equals(company.getId())) {
+            throw new ResourceNotFoundException("Hiring drive not found");
+        }
+
+        hiringDrive.setStatus(request.getStatus());
+        return mapHiringDrive(hiringDriveRepository.save(hiringDrive));
     }
 
     private void validateDateRange(CreateHiringDriveRequest request) {
