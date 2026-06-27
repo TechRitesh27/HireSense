@@ -1,6 +1,7 @@
 package com.p99softtraining.hiresense.controller;
 
 import com.p99softtraining.hiresense.dto.request.CreateHiringDriveRequest;
+import com.p99softtraining.hiresense.dto.request.UpdateHiringDriveStatusRequest;
 import com.p99softtraining.hiresense.dto.response.HiringDriveResponse;
 import com.p99softtraining.hiresense.service.HiringDriveService;
 import jakarta.validation.Valid;
@@ -11,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/hiring-drives")
@@ -37,6 +39,17 @@ public class HiringDriveController {
 
         return ResponseEntity.ok(
                 hiringDriveService.getHiringDrivesForCurrentCompany()
+        );
+    }
+
+    @PatchMapping("/{hiringDriveId}/status")
+    @PreAuthorize("hasRole('COMPANY_ADMIN')")
+    public ResponseEntity<HiringDriveResponse> updateStatus(
+            @PathVariable UUID hiringDriveId,
+            @Valid @RequestBody UpdateHiringDriveStatusRequest request
+    ) {
+        return ResponseEntity.ok(
+                hiringDriveService.updateStatus(hiringDriveId, request)
         );
     }
 }
