@@ -15,4 +15,6 @@ public interface CandidateService {
     List<CandidateResponse> getCandidatesForHiringDrive(UUID hiringDriveId);
 
     ExcelUploadResponse uploadCandidatesFromExcel(UUID hiringDriveId, MultipartFile file);
+
+//    ExcelUploadResponse importCandidatesFromUrl(UUID hiringDriveId, String url);
 }

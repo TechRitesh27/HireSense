@@ -16,9 +16,9 @@ import java.util.*;
 public class CandidateExcelParser implements CandidateFileParser {
 
     private static final Map<String, List<String>> FIELD_MAPPINGS = Map.of(
-            "fullName", List.of("full name", "candidate name", "name"),
+            "fullName", List.of("full name", "candidate name", "name", ""),
             "email", List.of("email", "email address", "mail"),
-            "phone", List.of("phone", "mobile", "phone number"),
+            "phone", List.of("phone", "mobile", "phone number", "contact"),
             "collegeName", List.of("college", "college name", "university"),
             "degree", List.of("degree", "qualification"),
             "branch", List.of("branch", "department", "specialization"),
@@ -41,10 +41,17 @@ public class CandidateExcelParser implements CandidateFileParser {
 
     @Override
     public ParsedCandidateData parse(MultipartFile file) throws IOException {
+        try (java.io.InputStream inputStream = file.getInputStream()) {
+            return parse(inputStream);
+        }
+    }
+
+    @Override
+    public ParsedCandidateData parse(java.io.InputStream inputStream) throws IOException {
         List<ParsedRow> parsedRows = new ArrayList<>();
         List<String> missingFields = new ArrayList<>();
 
-        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+        try (Workbook workbook = new XSSFWorkbook(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(0);
             if (headerRow == null) {

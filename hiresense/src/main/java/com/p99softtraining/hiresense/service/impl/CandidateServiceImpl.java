@@ -17,6 +17,7 @@ import com.p99softtraining.hiresense.repository.CandidateRepository;
 import com.p99softtraining.hiresense.repository.HiringDriveRepository;
 import com.p99softtraining.hiresense.service.CandidateService;
 import com.p99softtraining.hiresense.service.SecurityService;
+import com.p99softtraining.hiresense.service.SpreadsheetDownloader;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -34,6 +35,7 @@ public class CandidateServiceImpl implements CandidateService {
     private final SecurityService securityService;
     private final CandidateMapper candidateMapper;
     private final List<CandidateFileParser> fileParsers;
+    private final List<SpreadsheetDownloader> spreadsheetDownloaders;
 
     @Override
     public CandidateResponse createCandidate(
@@ -98,6 +100,38 @@ public class CandidateServiceImpl implements CandidateService {
             throw new RuntimeException("Failed to process Excel file", e);
         }
 
+        return processParsedData(hiringDriveId, parsedData);
+    }
+
+//    Commeneted for the future use - needs to be improved
+
+//    @Override
+//    public ExcelUploadResponse importCandidatesFromUrl(
+//            UUID hiringDriveId,
+//            String url
+//    ) {
+//
+//        SpreadsheetDownloader downloader = spreadsheetDownloaders.stream()
+//                .filter(d -> d.supports(url))
+//                .findFirst()
+//                .orElseThrow(() -> new IllegalArgumentException("Unsupported URL format. Please provide a valid HTTP/HTTPS spreadsheet link."));
+//
+//        CandidateFileParser parser = fileParsers.stream()
+//                .filter(p -> p.supports("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", url))
+//                .findFirst()
+//                .orElseThrow(() -> new IllegalArgumentException("No suitable spreadsheet parser found for this import."));
+//
+//        ParsedCandidateData parsedData;
+//        try (java.io.InputStream inputStream = downloader.download(url)) {
+//            parsedData = parser.parse(inputStream);
+//        } catch (Exception e) {
+//            throw new RuntimeException("Failed to download or parse spreadsheet from URL", e);
+//        }
+//
+//        return processParsedData(hiringDriveId, parsedData);
+//    }
+
+    private ExcelUploadResponse processParsedData(UUID hiringDriveId, ParsedCandidateData parsedData) {
         if (!parsedData.getMissingColumns().isEmpty()) {
             return ExcelUploadResponse.builder()
                     .totalRows(0)

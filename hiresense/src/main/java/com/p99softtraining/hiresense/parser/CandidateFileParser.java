@@ -8,4 +8,6 @@ public interface CandidateFileParser {
     boolean supports(String contentType, String fileName);
 
     ParsedCandidateData parse(MultipartFile file) throws IOException;
+
+    ParsedCandidateData parse(java.io.InputStream inputStream) throws IOException;
 }
