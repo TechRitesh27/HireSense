@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,11 +27,16 @@ public class CompanyController {
     public ResponseEntity<CompanyResponse> createCompany(
             @Valid @RequestBody CreateCompanyRequest request
     ) {
-
         return new ResponseEntity<>(
                 companyService.createCompany(request),
                 HttpStatus.CREATED
         );
+    }
+
+    @GetMapping
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public ResponseEntity<List<CompanyResponse>> getAllCompanies() {
+        return ResponseEntity.ok(companyService.getAllCompanies());
     }
 
     @PostMapping("/{companyId}/admins")
@@ -39,10 +45,17 @@ public class CompanyController {
             @PathVariable UUID companyId,
             @Valid @RequestBody CreateUserRequest request
     ) {
-
         return new ResponseEntity<>(
                 companyService.createCompanyAdmin(companyId, request),
                 HttpStatus.CREATED
         );
+    }
+
+    @GetMapping("/{companyId}/admins")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public ResponseEntity<List<UserResponse>> getAdminsForCompany(
+            @PathVariable UUID companyId
+    ) {
+        return ResponseEntity.ok(companyService.getAdminsForCompany(companyId));
     }
 }

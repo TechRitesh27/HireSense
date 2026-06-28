@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -81,5 +82,24 @@ public class CompanyServiceImpl implements CompanyService {
                 .companyId(user.getCompany().getId())
                 .companyName(user.getCompany().getName())
                 .build();
+    }
+
+    @Override
+    public List<CompanyResponse> getAllCompanies() {
+        return companyRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(this::mapCompany)
+                .toList();
+    }
+
+    @Override
+    public List<UserResponse> getAdminsForCompany(UUID companyId) {
+        companyRepository.findById(companyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
+
+        return userRepository.findByCompanyIdAndRole(companyId, Role.COMPANY_ADMIN)
+                .stream()
+                .map(this::mapUser)
+                .toList();
     }
 }

@@ -12,4 +12,6 @@ public interface UserService {
     AuthResponse login(LoginRequest loginRequest);
 
     UserResponse createInterviewer(CreateUserRequest request);
+
+    java.util.List<UserResponse> getInterviewersForCurrentCompany();
 }

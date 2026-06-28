@@ -101,6 +101,23 @@ public class UserServiceImpl implements UserService {
         return mapUser(userRepository.save(interviewer));
     }
 
+    @Override
+    public java.util.List<UserResponse> getInterviewersForCurrentCompany() {
+        User currentUser = getCurrentUser();
+
+        if (currentUser.getCompany() == null) {
+            throw new IllegalArgumentException("Current user is not assigned to a company");
+        }
+
+        return userRepository.findByCompanyIdAndRole(
+                        currentUser.getCompany().getId(),
+                        Role.INTERVIEWER
+                )
+                .stream()
+                .map(this::mapUser)
+                .toList();
+    }
+
     private User getCurrentUser() {
 
         String email = SecurityContextHolder.getContext()
