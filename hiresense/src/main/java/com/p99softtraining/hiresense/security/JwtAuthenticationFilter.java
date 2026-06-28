@@ -9,8 +9,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -52,8 +50,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .getContext()
                 .getAuthentication() == null
         ) {
-            UserDetails userDetails =
-                    userDetailsService.loadUserByUsername(userEmail);
+            UserDetails userDetails;
+            try {
+                userDetails = userDetailsService.loadUserByUsername(userEmail);
+            } catch (Exception e) {
+                // User no longer exists in DB (e.g. after DB reset) — treat as unauthenticated
+                filterChain.doFilter(request, response);
+                return;
+            }
 
             if (jwtService.isTokenValid(
                     jwtToken, userDetails.getUsername()

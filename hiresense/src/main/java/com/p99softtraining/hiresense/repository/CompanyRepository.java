@@ -10,4 +10,7 @@ import java.util.UUID;
 public interface CompanyRepository extends JpaRepository<Company, UUID> {
 
     boolean existsByEmail(String email);
+
+    // Used by Super Admin to list all companies
+    java.util.List<Company> findAllByOrderByCreatedAtDesc();
 }
