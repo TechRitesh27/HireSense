@@ -55,9 +55,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             questionRepository.deleteByCandidateIdAndInterviewRoundId(candidateId, roundId);
         }
 
-        // ── HARDCODED DEMO QUESTIONS ─────────────────────────────────────────
+        // HARDCODED DEMO QUESTIONS
         List<InterviewQuestion> questions = buildDemoQuestions(candidate, round);
-        // ─────────────────────────────────────────────────────────────────────
 
         List<InterviewQuestion> saved = questionRepository.saveAll(questions);
         return saved.stream().map(this::toResponse).toList();

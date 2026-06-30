@@ -44,7 +44,7 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
         profileRepository.findByCandidateId(candidateId)
                 .ifPresent(profileRepository::delete);
 
-        // ── HARDCODED DEMO DATA ──────────────────────────────────────────────
+        // HARDCODED DEMO DATA
         CandidateProfile profile = new CandidateProfile();
         profile.setCandidate(candidate);
         profile.setSkills("Java, Spring Boot, REST APIs, PostgreSQL, Docker, Git, JUnit, Maven");
@@ -68,7 +68,6 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
         projects.add(p1);
         projects.add(p2);
         profile.setProjects(projects);
-        // ────────────────────────────────────────────────────────────────────
 
         CandidateProfile saved = profileRepository.save(profile);
         return toResponse(saved);

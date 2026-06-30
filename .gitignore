@@ -1,2 +1,9 @@
 .vscode/
 .kiro/
+
+# Environment secrets — never commit real .env
+.env
+*.env.local
+
+# Docker volumes / temp
+postgres_data/

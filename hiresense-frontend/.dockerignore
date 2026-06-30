@@ -1,0 +1,20 @@
+# Dependencies — installed fresh inside Docker
+node_modules/
+
+# Build output — built fresh inside Docker
+build/
+
+# Environment files — values passed via build args
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
