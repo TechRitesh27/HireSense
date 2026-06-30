@@ -17,10 +17,10 @@ public class CandidateExcelParser implements CandidateFileParser {
 
     private static final Map<String, List<String>> FIELD_MAPPINGS = Map.of(
             "fullName", List.of("full name", "candidate name", "name", ""),
-            "email", List.of("email", "email address", "mail"),
+            "email", List.of("email", "email address", "mail", "email id"),
             "phone", List.of("phone", "mobile", "phone number", "contact"),
             "collegeName", List.of("college", "college name", "university"),
-            "degree", List.of("degree", "qualification"),
+            "degree", List.of("degree", "qualification", "Higher Education"),
             "branch", List.of("branch", "department", "specialization"),
             "graduationYear", List.of("graduation year", "passout year", "year"),
             "resumeUrl", List.of("resume", "resume url", "cv link")

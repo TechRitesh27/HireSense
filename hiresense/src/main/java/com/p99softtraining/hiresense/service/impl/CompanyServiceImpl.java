@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.request.CreateCompanyRequest;
 import com.p99softtraining.hiresense.dto.request.CreateUserRequest;
 import com.p99softtraining.hiresense.dto.response.CompanyResponse;
@@ -13,6 +14,8 @@ import com.p99softtraining.hiresense.repository.CompanyRepository;
 import com.p99softtraining.hiresense.repository.UserRepository;
 import com.p99softtraining.hiresense.service.CompanyService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -28,8 +31,8 @@ public class CompanyServiceImpl implements CompanyService {
     private final PasswordEncoder passwordEncoder;
 
     @Override
+    @CacheEvict(value = CacheConfig.COMPANIES, allEntries = true)
     public CompanyResponse createCompany(CreateCompanyRequest request) {
-
         if (companyRepository.existsByEmail(request.getEmail())) {
             throw new ResourceAlreadyExistsException("Company email already exists");
         }
@@ -43,8 +46,8 @@ public class CompanyServiceImpl implements CompanyService {
     }
 
     @Override
+    @CacheEvict(value = CacheConfig.INTERVIEWERS, allEntries = true)
     public UserResponse createCompanyAdmin(UUID companyId, CreateUserRequest request) {
-
         Company company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
 
@@ -62,29 +65,8 @@ public class CompanyServiceImpl implements CompanyService {
         return mapUser(userRepository.save(user));
     }
 
-    private CompanyResponse mapCompany(Company company) {
-
-        return CompanyResponse.builder()
-                .id(company.getId())
-                .name(company.getName())
-                .address(company.getAddress())
-                .email(company.getEmail())
-                .build();
-    }
-
-    private UserResponse mapUser(User user) {
-
-        return UserResponse.builder()
-                .id(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .role(user.getRole())
-                .companyId(user.getCompany().getId())
-                .companyName(user.getCompany().getName())
-                .build();
-    }
-
     @Override
+    @Cacheable(value = CacheConfig.COMPANIES)
     public List<CompanyResponse> getAllCompanies() {
         return companyRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
@@ -101,5 +83,25 @@ public class CompanyServiceImpl implements CompanyService {
                 .stream()
                 .map(this::mapUser)
                 .toList();
+    }
+
+    private CompanyResponse mapCompany(Company company) {
+        return CompanyResponse.builder()
+                .id(company.getId())
+                .name(company.getName())
+                .address(company.getAddress())
+                .email(company.getEmail())
+                .build();
+    }
+
+    private UserResponse mapUser(User user) {
+        return UserResponse.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .companyId(user.getCompany().getId())
+                .companyName(user.getCompany().getName())
+                .build();
     }
 }

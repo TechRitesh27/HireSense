@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.response.InterviewQuestionResponse;
 import com.p99softtraining.hiresense.dto.response.KeyPointResponse;
 import com.p99softtraining.hiresense.entity.*;
@@ -10,6 +11,8 @@ import com.p99softtraining.hiresense.repository.*;
 import com.p99softtraining.hiresense.service.QuestionGenerationService;
 import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     @Override
     @Transactional
+    @CacheEvict(value = CacheConfig.QUESTIONS, key = "#candidateId + '_' + #roundId")
     public List<InterviewQuestionResponse> generateQuestions(UUID candidateId, UUID roundId) {
         securityService.getCurrentUserCompany();
 
@@ -51,9 +55,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             questionRepository.deleteByCandidateIdAndInterviewRoundId(candidateId, roundId);
         }
 
-        // ── HARDCODED DEMO QUESTIONS ─────────────────────────────────────────
+        // HARDCODED DEMO QUESTIONS
         List<InterviewQuestion> questions = buildDemoQuestions(candidate, round);
-        // ─────────────────────────────────────────────────────────────────────
 
         List<InterviewQuestion> saved = questionRepository.saveAll(questions);
         return saved.stream().map(this::toResponse).toList();
@@ -61,6 +64,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConfig.QUESTIONS, key = "#candidateId + '_' + #roundId")
     public List<InterviewQuestionResponse> getQuestions(UUID candidateId, UUID roundId) {
         securityService.getCurrentUserCompany();
 

@@ -1,0 +1,21 @@
+# Maven build output
+target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# Local config files (not needed in Docker — uses env vars)
+src/main/resources/application-local.properties
+
+# Git
+.git/
+.gitignore
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Kiro / spec files
+.kiro/

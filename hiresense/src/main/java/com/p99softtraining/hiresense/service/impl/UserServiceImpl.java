@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.request.CreateUserRequest;
 import com.p99softtraining.hiresense.dto.request.LoginRequest;
 import com.p99softtraining.hiresense.dto.request.RegisterRequest;
@@ -13,6 +14,8 @@ import com.p99softtraining.hiresense.repository.UserRepository;
 import com.p99softtraining.hiresense.security.JwtService;
 import com.p99softtraining.hiresense.service.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -79,6 +82,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @CacheEvict(value = CacheConfig.INTERVIEWERS, allEntries = true)
     public UserResponse createInterviewer(CreateUserRequest request) {
 
         User companyAdmin = getCurrentUser();
@@ -102,6 +106,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Cacheable(value = CacheConfig.INTERVIEWERS, key = "T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName()")
     public java.util.List<UserResponse> getInterviewersForCurrentCompany() {
         User currentUser = getCurrentUser();
 

@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.response.CandidateProfileResponse;
 import com.p99softtraining.hiresense.dto.response.CandidateProjectResponse;
 import com.p99softtraining.hiresense.entity.Candidate;
@@ -13,6 +14,8 @@ import com.p99softtraining.hiresense.repository.CandidateRepository;
 import com.p99softtraining.hiresense.service.ResumeIntelligenceService;
 import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +35,7 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
 
     @Override
     @Transactional
+    @CacheEvict(value = CacheConfig.CANDIDATE_PROFILE, key = "#candidateId")
     public CandidateProfileResponse parseResume(UUID candidateId) {
         Company company = securityService.getCurrentUserCompany();
         Candidate candidate = resolveCompanyCandidate(candidateId, company.getId());
@@ -40,7 +44,7 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
         profileRepository.findByCandidateId(candidateId)
                 .ifPresent(profileRepository::delete);
 
-        // ── HARDCODED DEMO DATA ──────────────────────────────────────────────
+        // HARDCODED DEMO DATA
         CandidateProfile profile = new CandidateProfile();
         profile.setCandidate(candidate);
         profile.setSkills("Java, Spring Boot, REST APIs, PostgreSQL, Docker, Git, JUnit, Maven");
@@ -64,7 +68,6 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
         projects.add(p1);
         projects.add(p2);
         profile.setProjects(projects);
-        // ────────────────────────────────────────────────────────────────────
 
         CandidateProfile saved = profileRepository.save(profile);
         return toResponse(saved);
@@ -72,6 +75,7 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConfig.CANDIDATE_PROFILE, key = "#candidateId")
     public CandidateProfileResponse getProfile(UUID candidateId) {
         Company company = securityService.getCurrentUserCompany();
         resolveCompanyCandidate(candidateId, company.getId());
