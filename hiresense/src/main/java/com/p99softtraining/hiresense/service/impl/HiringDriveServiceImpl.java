@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.request.CreateHiringDriveRequest;
 import com.p99softtraining.hiresense.dto.request.UpdateHiringDriveStatusRequest;
 import com.p99softtraining.hiresense.dto.response.HiringDriveResponse;
@@ -12,6 +13,8 @@ import com.p99softtraining.hiresense.repository.HiringDriveRepository;
 import com.p99softtraining.hiresense.repository.UserRepository;
 import com.p99softtraining.hiresense.service.HiringDriveService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +30,7 @@ public class HiringDriveServiceImpl implements HiringDriveService {
     private final UserRepository userRepository;
 
     @Override
+    @CacheEvict(value = CacheConfig.HIRING_DRIVES, allEntries = true)
     public HiringDriveResponse createHiringDrive(CreateHiringDriveRequest request) {
 
         Company company = getCurrentUserCompany();
@@ -44,6 +48,7 @@ public class HiringDriveServiceImpl implements HiringDriveService {
     }
 
     @Override
+    @Cacheable(value = CacheConfig.HIRING_DRIVES, key = "#root.methodName + '_' + T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName()")
     public List<HiringDriveResponse> getHiringDrivesForCurrentCompany() {
 
         Company company = getCurrentUserCompany();
@@ -56,6 +61,7 @@ public class HiringDriveServiceImpl implements HiringDriveService {
 
     @Override
     @Transactional
+    @CacheEvict(value = CacheConfig.HIRING_DRIVES, allEntries = true)
     public HiringDriveResponse updateStatus(UUID hiringDriveId, UpdateHiringDriveStatusRequest request) {
 
         Company company = getCurrentUserCompany();

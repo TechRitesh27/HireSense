@@ -130,6 +130,9 @@ function AdminLayout({ children }) {
               </IconButton>
             )}
             <Box sx={{ flex: 1 }} />
+            <IconButton aria-label="logout" onClick={handleLogout} size="small" sx={{ mr: 1 }}>
+              <LogoutOutlined />
+            </IconButton>
             <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} size="small">
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: 14 }}>
                 {user?.fullName?.[0]?.toUpperCase() || 'A'}

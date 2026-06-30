@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.config.CacheConfig;
 import com.p99softtraining.hiresense.dto.request.CreateInterviewRoundRequest;
 import com.p99softtraining.hiresense.dto.response.InterviewRoundResponse;
 import com.p99softtraining.hiresense.entity.Company;
@@ -13,6 +14,8 @@ import com.p99softtraining.hiresense.repository.InterviewRoundRepository;
 import com.p99softtraining.hiresense.service.InterviewRoundService;
 import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ public class InterviewRoundServiceImpl implements InterviewRoundService {
 
     @Override
     @Transactional
+    @CacheEvict(value = CacheConfig.ROUNDS, key = "#hiringDriveId")
     public InterviewRoundResponse createRound(UUID hiringDriveId, CreateInterviewRoundRequest request) {
         Company company = securityService.getCurrentUserCompany();
         HiringDrive hiringDrive = resolveCompanyHiringDrive(hiringDriveId, company.getId());
@@ -53,6 +57,7 @@ public class InterviewRoundServiceImpl implements InterviewRoundService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConfig.ROUNDS, key = "#hiringDriveId")
     public List<InterviewRoundResponse> getRoundsForHiringDrive(UUID hiringDriveId) {
         Company company = securityService.getCurrentUserCompany();
         resolveCompanyHiringDrive(hiringDriveId, company.getId());
