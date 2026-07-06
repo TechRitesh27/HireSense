@@ -23,8 +23,9 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Clear stale token on 401 (expired) or 403 (user deleted / DB reset)
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    // Only clear the token and redirect on 401 (token expired / missing)
+    // 403 means forbidden but authenticated — don't logout, let the caller handle it
+    if (error.response?.status === 401) {
       const isLoginEndpoint = error.config?.url?.includes('/auth/login');
       if (!isLoginEndpoint) {
         localStorage.removeItem('hiresense_token');

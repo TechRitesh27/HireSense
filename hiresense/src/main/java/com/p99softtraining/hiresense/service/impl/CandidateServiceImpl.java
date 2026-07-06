@@ -103,33 +103,31 @@ public class CandidateServiceImpl implements CandidateService {
         return processParsedData(hiringDriveId, parsedData);
     }
 
-//    Commeneted for the future use - needs to be improved
+    @Override
+    public ExcelUploadResponse importCandidatesFromUrl(
+            UUID hiringDriveId,
+            String url
+    ) {
 
-//    @Override
-//    public ExcelUploadResponse importCandidatesFromUrl(
-//            UUID hiringDriveId,
-//            String url
-//    ) {
-//
-//        SpreadsheetDownloader downloader = spreadsheetDownloaders.stream()
-//                .filter(d -> d.supports(url))
-//                .findFirst()
-//                .orElseThrow(() -> new IllegalArgumentException("Unsupported URL format. Please provide a valid HTTP/HTTPS spreadsheet link."));
-//
-//        CandidateFileParser parser = fileParsers.stream()
-//                .filter(p -> p.supports("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", url))
-//                .findFirst()
-//                .orElseThrow(() -> new IllegalArgumentException("No suitable spreadsheet parser found for this import."));
-//
-//        ParsedCandidateData parsedData;
-//        try (java.io.InputStream inputStream = downloader.download(url)) {
-//            parsedData = parser.parse(inputStream);
-//        } catch (Exception e) {
-//            throw new RuntimeException("Failed to download or parse spreadsheet from URL", e);
-//        }
-//
-//        return processParsedData(hiringDriveId, parsedData);
-//    }
+        SpreadsheetDownloader downloader = spreadsheetDownloaders.stream()
+                .filter(d -> d.supports(url))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported URL format. Please provide a valid HTTP/HTTPS spreadsheet link."));
+
+        CandidateFileParser parser = fileParsers.stream()
+                .filter(p -> p.supports("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", url))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No suitable spreadsheet parser found for this import."));
+
+        ParsedCandidateData parsedData;
+        try (java.io.InputStream inputStream = downloader.download(url)) {
+            parsedData = parser.parse(inputStream);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download or parse spreadsheet from URL: " + e.getMessage(), e);
+        }
+
+        return processParsedData(hiringDriveId, parsedData);
+    }
 
     private ExcelUploadResponse processParsedData(UUID hiringDriveId, ParsedCandidateData parsedData) {
         if (!parsedData.getMissingColumns().isEmpty()) {

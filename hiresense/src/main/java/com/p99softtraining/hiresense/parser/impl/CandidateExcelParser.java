@@ -5,7 +5,7 @@ import com.p99softtraining.hiresense.parser.CandidateFileParser;
 import com.p99softtraining.hiresense.parser.ParsedCandidateData;
 import com.p99softtraining.hiresense.parser.ParsedRow;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -51,7 +51,13 @@ public class CandidateExcelParser implements CandidateFileParser {
         List<ParsedRow> parsedRows = new ArrayList<>();
         List<String> missingFields = new ArrayList<>();
 
-        try (Workbook workbook = new XSSFWorkbook(inputStream)) {
+        // Buffer the stream so POI can mark/reset it, and use WorkbookFactory
+        // which handles both .xls and .xlsx including Google Sheets exports
+        java.io.InputStream buffered = inputStream.markSupported()
+                ? inputStream
+                : new java.io.BufferedInputStream(inputStream);
+
+        try (Workbook workbook = WorkbookFactory.create(buffered)) {
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(0);
             if (headerRow == null) {

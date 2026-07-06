@@ -13,3 +13,8 @@ export const uploadCandidatesExcel = (hiringDriveId, file) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 };
+
+export const importCandidatesFromUrl = (hiringDriveId, url) =>
+  axiosInstance.post(`/hiring-drives/${hiringDriveId}/candidates/import-url`, null, {
+    params: { url },
+  });

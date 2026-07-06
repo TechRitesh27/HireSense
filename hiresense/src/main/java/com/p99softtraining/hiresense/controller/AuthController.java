@@ -3,7 +3,6 @@ package com.p99softtraining.hiresense.controller;
 import com.p99softtraining.hiresense.dto.request.LoginRequest;
 import com.p99softtraining.hiresense.dto.request.RegisterRequest;
 import com.p99softtraining.hiresense.dto.response.AuthResponse;
-import com.p99softtraining.hiresense.dto.response.UserResponse;
 import com.p99softtraining.hiresense.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
