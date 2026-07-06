@@ -61,19 +61,18 @@ public class CandidateController {
         );
     }
 
-//    Kept this pending as a future implementation - Need to be solve the error of 400 ( Cause due to access issue )
-//    @PostMapping("/import-url")
-//    @PreAuthorize("hasRole('COMPANY_ADMIN')")
-//    public ResponseEntity<ExcelUploadResponse> importCandidatesFromUrl(
-//            @PathVariable UUID hiringDriveId,
-//            @RequestParam("url") String url
-//    ) {
-//
-//        return ResponseEntity.ok(
-//                candidateService.importCandidatesFromUrl(
-//                        hiringDriveId,
-//                        url
-//                )
-//        );
-//    }
+    @PostMapping("/import-url")
+    @PreAuthorize("hasRole('COMPANY_ADMIN')")
+    public ResponseEntity<ExcelUploadResponse> importCandidatesFromUrl(
+            @PathVariable UUID hiringDriveId,
+            @RequestParam("url") String url
+    ) {
+
+        return ResponseEntity.ok(
+                candidateService.importCandidatesFromUrl(
+                        hiringDriveId,
+                        url
+                )
+        );
+    }
 }

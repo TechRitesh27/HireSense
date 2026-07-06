@@ -36,4 +36,13 @@ public class GlobalExceptionHandler {
     ) {
         return new ResponseEntity<>("Invalid credentials", HttpStatus.UNAUTHORIZED);
     }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<String> handleRuntimeException(
+            RuntimeException ex
+    ) {
+        // Unwrap the cause message for user-facing errors (e.g. spreadsheet import failures)
+        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+        return new ResponseEntity<>(message, HttpStatus.BAD_REQUEST);
+    }
 }

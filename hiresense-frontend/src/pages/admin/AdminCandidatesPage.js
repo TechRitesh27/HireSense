@@ -8,12 +8,12 @@ import {
   Avatar, ListItemAvatar, ListItemText,
 } from '@mui/material';
 import {
-  Add, Upload, PersonAddAlt, MeetingRoom, EmojiEvents, OpenInNew,
+  Add, Upload, PersonAddAlt, MeetingRoom, EmojiEvents, OpenInNew, Link as LinkIcon,
 } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
 import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
-import { getCandidates, createCandidate, uploadCandidatesExcel } from '../../api/candidateApi';
+import { getCandidates, createCandidate, uploadCandidatesExcel, importCandidatesFromUrl } from '../../api/candidateApi';
 import { assignInterviewers } from '../../api/assignmentApi';
 import { getInterviewers } from '../../api/userApi';
 
@@ -43,6 +43,11 @@ function AdminCandidatesPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
+
+  // URL import
+  const [importUrlOpen, setImportUrlOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [importUrlError, setImportUrlError] = useState('');
 
   // Interviewer list for assign dialog
   const [interviewers, setInterviewers] = useState([]);
@@ -116,6 +121,28 @@ function AdminCandidatesPage() {
     }
   };
 
+  const handleImportFromUrl = async () => {
+    if (!importUrl.trim()) {
+      setImportUrlError('Please enter a URL.');
+      return;
+    }
+    setSubmitting(true);
+    setImportUrlError('');
+    try {
+      const res = await importCandidatesFromUrl(hiringDriveId, importUrl.trim());
+      const { successCount, failedCount } = res.data;
+      setSuccess(`Import complete — ${successCount} added, ${failedCount} failed.`);
+      setImportUrlOpen(false);
+      setImportUrl('');
+      fetchCandidates();
+    } catch (err) {
+      const msg = err.response?.data?.message || err.response?.data || 'Import failed. Make sure the sheet is publicly accessible.';
+      setImportUrlError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleAssign = async () => {
     if (!selectedInterviewerIds.length || !selectedCandidate) return;
     setSubmitting(true);
@@ -158,6 +185,9 @@ function AdminCandidatesPage() {
           </Button>
           <Button variant="outlined" startIcon={<Upload />} onClick={() => setUploadOpen(true)}>
             Upload Excel
+          </Button>
+          <Button variant="outlined" startIcon={<LinkIcon />} onClick={() => { setImportUrl(''); setImportUrlError(''); setImportUrlOpen(true); }}>
+            Import from URL
           </Button>
           <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)}>
             Add Candidate
@@ -283,6 +313,38 @@ function AdminCandidatesPage() {
           <Button onClick={() => { setUploadOpen(false); setUploadFile(null); }}>Cancel</Button>
           <Button variant="contained" onClick={handleUpload} disabled={!uploadFile || submitting}>
             {submitting ? <CircularProgress size={18} /> : 'Upload'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Import from URL Dialog */}
+      <Dialog open={importUrlOpen} onClose={() => setImportUrlOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Import Candidates from URL</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Paste a Google Sheets link or a direct link to an Excel file (.xlsx).
+            For Google Sheets, make sure the sheet is set to <b>Anyone with the link → Viewer</b>.
+          </Typography>
+          <TextField
+            label="Spreadsheet URL"
+            fullWidth
+            size="small"
+            value={importUrl}
+            onChange={(e) => { setImportUrl(e.target.value); setImportUrlError(''); }}
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            error={Boolean(importUrlError)}
+            helperText={importUrlError}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setImportUrlOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            startIcon={<LinkIcon />}
+            onClick={handleImportFromUrl}
+            disabled={!importUrl.trim() || submitting}
+          >
+            {submitting ? <CircularProgress size={18} /> : 'Import'}
           </Button>
         </DialogActions>
       </Dialog>

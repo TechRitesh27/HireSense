@@ -36,7 +36,7 @@ public class GoogleSheetsDownloader implements SpreadsheetDownloader {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(exportUrl))
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .header("Accept", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*;q=0.8")
                 .GET()
                 .build();
@@ -44,16 +44,25 @@ public class GoogleSheetsDownloader implements SpreadsheetDownloader {
         try {
             HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
             byte[] body = response.body();
+
             if (response.statusCode() != 200) {
-                throw new IOException("Failed to download Google Sheet. HTTP status code: " + response.statusCode());
+                throw new IOException("Failed to download Google Sheet. HTTP status: " + response.statusCode());
             }
             if (body == null || body.length == 0) {
-                throw new IOException("Downloaded Google Sheet was empty");
+                throw new IOException("Downloaded Google Sheet was empty.");
             }
+
+            // Always check for HTML BEFORE returning the stream — POI gives a confusing
+            // "unsupported file type: HTML" error if we don't catch it here first.
             if (looksLikeHtml(body)) {
-                throw new IOException("Google Sheets export returned HTML instead of spreadsheet data");
+                throw new IOException(
+                    "Google Sheets returned a login page instead of the spreadsheet. " +
+                    "Open the sheet → Share → 'Anyone with the link' → Viewer, then try again."
+                );
             }
+
             return new java.io.ByteArrayInputStream(body);
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Download interrupted", e);
@@ -68,10 +77,10 @@ public class GoogleSheetsDownloader implements SpreadsheetDownloader {
 
         String spreadsheetId = matcher.group(1);
         String gid = extractGid(url);
+        // Correct export URL — no redundant 'id=' param which can trigger a redirect
         StringBuilder exportUrl = new StringBuilder("https://docs.google.com/spreadsheets/d/")
                 .append(spreadsheetId)
-                .append("/export?format=xlsx&id=")
-                .append(spreadsheetId);
+                .append("/export?format=xlsx");
 
         if (gid != null && !gid.isBlank()) {
             exportUrl.append("&gid=").append(gid);
@@ -89,7 +98,15 @@ public class GoogleSheetsDownloader implements SpreadsheetDownloader {
     }
 
     private boolean looksLikeHtml(byte[] body) {
-        String content = new String(body, java.nio.charset.StandardCharsets.UTF_8).trim();
-        return content.startsWith("<!DOCTYPE") || content.startsWith("<html") || content.startsWith("<body") || content.contains("<title>");
+        // Decode first 512 bytes, strip BOM and whitespace, then check for HTML markers
+        int checkLen = Math.min(body.length, 512);
+        String content = new String(body, 0, checkLen, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("\uFEFF", "")  // strip UTF-8 BOM
+                .stripLeading()
+                .toLowerCase();
+        return content.startsWith("<!doctype")
+                || content.startsWith("<html")
+                || content.startsWith("<body")
+                || content.contains("<title>");
     }
 }
