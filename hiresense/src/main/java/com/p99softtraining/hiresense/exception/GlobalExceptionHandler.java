@@ -37,6 +37,26 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>("Invalid credentials", HttpStatus.UNAUTHORIZED);
     }
 
+    @ExceptionHandler(ResumeDownloadException.class)
+    public ResponseEntity<String> handleResumeDownload(ResumeDownloadException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_GATEWAY);
+    }
+
+    @ExceptionHandler(UnsupportedResumeFormatException.class)
+    public ResponseEntity<String> handleUnsupportedResumeFormat(UnsupportedResumeFormatException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    @ExceptionHandler(ResumeTextExtractionException.class)
+    public ResponseEntity<String> handleResumeTextExtraction(ResumeTextExtractionException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    @ExceptionHandler(AiExtractionException.class)
+    public ResponseEntity<String> handleAiExtraction(AiExtractionException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_GATEWAY);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<String> handleRuntimeException(
             RuntimeException ex

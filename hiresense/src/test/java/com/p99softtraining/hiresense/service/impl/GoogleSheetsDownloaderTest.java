@@ -17,8 +17,9 @@ class GoogleSheetsDownloaderTest {
 
     @Test
     void testBuildsExportUrlForSharedGoogleSheetsLinks() {
+        // The export URL intentionally omits the redundant 'id=' param — see GoogleSheetsDownloader comment
         assertEquals(
-                "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBipkA4d1ACTpD5XNjhfA/export?format=xlsx&id=1BxiMVs0XRA5nFMdKvBdBipkA4d1ACTpD5XNjhfA&gid=0",
+                "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBipkA4d1ACTpD5XNjhfA/export?format=xlsx&gid=0",
                 downloader.buildExportUrl("https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBipkA4d1ACTpD5XNjhfA/edit?usp=sharing&gid=0")
         );
     }
