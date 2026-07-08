@@ -43,6 +43,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "8080:8080"
     healthcheck:
