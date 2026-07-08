@@ -32,6 +32,11 @@ function LoginPage() {
     formState: { errors },
   } = useForm();
 
+  const googleLoginUrl = (() => {
+    const baseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api/v1';
+    return baseUrl.replace(/\/api\/v1\/?$/, '') + '/oauth2/authorization/google';
+  })();
+
   const onSubmit = async (data) => {
     setLoading(true);
     setError('');
@@ -149,6 +154,18 @@ function LoginPage() {
                 sx={{ mt: 3, py: 1.4 }}
               >
                 {loading ? <CircularProgress size={22} color="inherit" /> : 'Sign In'}
+              </Button>
+
+              <Divider sx={{ my: 3 }}>or</Divider>
+
+              <Button
+                component="a"
+                href={googleLoginUrl}
+                variant="outlined"
+                fullWidth
+                size="large"
+              >
+                Continue with Google
               </Button>
             </Box>
           </CardContent>

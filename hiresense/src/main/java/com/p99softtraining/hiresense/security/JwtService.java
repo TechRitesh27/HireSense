@@ -24,13 +24,22 @@ public class JwtService {
     }
 
     public String generateToken(String email) {
+        return generateToken(email, null);
+    }
 
-        return Jwts.builder()
+    public String generateToken(String email, String role) {
+        var builder = Jwts.builder()
                 .setSubject(email)
                 .setIssuedAt(new Date())
                 .setExpiration(
                         new Date(System.currentTimeMillis() + expiration)
-                )
+                );
+
+        if (role != null && !role.isBlank()) {
+            builder.claim("role", role);
+        }
+
+        return builder
                 .signWith(getSignKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

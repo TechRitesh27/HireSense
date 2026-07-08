@@ -54,7 +54,7 @@ public class UserServiceImpl implements UserService {
 
         User savedUser = userRepository.save(user);
 
-        String token = jwtService.generateToken(savedUser.getEmail());
+        String token = jwtService.generateToken(savedUser.getEmail(), savedUser.getRole().name());
 
         return buildAuthResponse(token, savedUser);
     }
@@ -76,7 +76,7 @@ public class UserServiceImpl implements UserService {
             throw new BadCredentialsException("Invalid credentials");
         }
 
-        String token = jwtService.generateToken(user.getEmail());
+        String token = jwtService.generateToken(user.getEmail(), user.getRole().name());
 
         return buildAuthResponse(token, user);
     }
