@@ -9,6 +9,7 @@ import ProtectedRoute from './routes/ProtectedRoute';
 // Auth
 import LoginPage from './pages/auth/LoginPage';
 import SetupPage from './pages/auth/SetupPage';
+import OAuthCallbackPage from './pages/auth/OAuthCallbackPage';
 
 // Shared
 import UnauthorizedPage from './pages/UnauthorizedPage';
@@ -47,6 +48,7 @@ function App() {
               {/* Public */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/setup" element={<SetupPage />} />
+              <Route path="/oauth-callback" element={<OAuthCallbackPage />} />
               <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
               {/* Default redirect */}
