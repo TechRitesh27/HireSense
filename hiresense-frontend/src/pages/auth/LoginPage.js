@@ -67,6 +67,7 @@ function LoginPage() {
 
   return (
     <Box
+    
       sx={{
         minHeight: '100vh',
         display: 'flex',

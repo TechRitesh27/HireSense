@@ -8,9 +8,11 @@ import com.p99softtraining.hiresense.enums.DifficultyLevel;
 import com.p99softtraining.hiresense.enums.ProfileStatus;
 import com.p99softtraining.hiresense.exception.ResourceNotFoundException;
 import com.p99softtraining.hiresense.repository.*;
+import com.p99softtraining.hiresense.dto.QuestionGenerationResult;
 import com.p99softtraining.hiresense.service.QuestionGenerationService;
 import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     private final InterviewRoundRepository roundRepository;
     private final InterviewQuestionRepository questionRepository;
     private final SecurityService securityService;
+    private final ChatClient chatClient;
 
     @Override
     @Transactional
@@ -55,8 +58,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             questionRepository.deleteByCandidateIdAndInterviewRoundId(candidateId, roundId);
         }
 
-        // HARDCODED DEMO QUESTIONS
-        List<InterviewQuestion> questions = buildDemoQuestions(candidate, round);
+        // Generate questions using AI based on candidate's parsed skills & projects
+        List<InterviewQuestion> questions = generateQuestionsWithAi(candidate, profile, round);
 
         List<InterviewQuestion> saved = questionRepository.saveAll(questions);
         return saved.stream().map(this::toResponse).toList();
@@ -77,65 +80,55 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private List<InterviewQuestion> buildDemoQuestions(Candidate candidate, InterviewRound round) {
-        List<InterviewQuestion> questions = new ArrayList<>();
+    private List<InterviewQuestion> generateQuestionsWithAi(Candidate candidate, CandidateProfile profile, InterviewRound round) {
+        String skills = profile.getSkills() != null ? profile.getSkills() : "None";
+        StringBuilder projectsBuilder = new StringBuilder();
+        if (profile.getProjects() != null && !profile.getProjects().isEmpty()) {
+            for (CandidateProject p : profile.getProjects()) {
+                projectsBuilder.append("- Project Name: ").append(p.getProjectName()).append("\n");
+                projectsBuilder.append("  Tech Stack: ").append(p.getTechStack() != null ? p.getTechStack() : "None").append("\n");
+                projectsBuilder.append("  Description: ").append(p.getDescription() != null ? p.getDescription() : "None").append("\n\n");
+            }
+        } else {
+            projectsBuilder.append("None");
+        }
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.EASY,
-                "What is the difference between JDK, JRE, and JVM?",
-                List.of(
-                        "JVM executes bytecode",
-                        "JRE includes JVM + libraries",
-                        "JDK includes JRE + development tools"
-                )));
+        String userPrompt = String.format("Candidate Skills: %s\nCandidate Projects:\n%s", skills, projectsBuilder.toString());
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.EASY,
-                "What are the main principles of OOP?",
-                List.of(
-                        "Encapsulation",
-                        "Inheritance",
-                        "Polymorphism",
-                        "Abstraction"
-                )));
+        String systemPrompt = "You are an expert technical interviewer. Generate exactly 6 technical interview questions tailored to the candidate's skills and projects. " +
+                "The questions must be categorized as: exactly 2 EASY, 2 MEDIUM, and 2 HARD questions. " +
+                "For each question, provide:\n" +
+                "1. questionText: The actual question.\n" +
+                "2. difficultyLevel: The level of the question, must be exactly \"EASY\", \"MEDIUM\", or \"HARD\".\n" +
+                "3. keyPoints: A list of 3 to 5 brief bullet points or phrases that represent the expected answers or key criteria the candidate should cover in their answer. " +
+                "Return the results in the requested JSON structure.";
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.MEDIUM,
-                "Explain the Spring Boot auto-configuration mechanism.",
-                List.of(
-                        "Uses @EnableAutoConfiguration",
-                        "Reads META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
-                        "Conditionally applies configuration using @ConditionalOn* annotations",
-                        "Can be overridden with custom beans"
-                )));
+        try {
+            QuestionGenerationResult result = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .call()
+                    .entity(QuestionGenerationResult.class);
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.MEDIUM,
-                "How does Spring Security handle JWT authentication?",
-                List.of(
-                        "Filter chain intercepts incoming requests",
-                        "JWT is extracted from Authorization header",
-                        "Token is validated and UsernamePasswordAuthenticationToken is set in SecurityContext",
-                        "Stateless session management"
-                )));
+            if (result == null || result.questions() == null || result.questions().isEmpty()) {
+                throw new IllegalStateException("AI generated empty questions list");
+            }
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.HARD,
-                "Explain database transaction isolation levels and when you would use each.",
-                List.of(
-                        "READ_UNCOMMITTED — dirty reads possible",
-                        "READ_COMMITTED — prevents dirty reads",
-                        "REPEATABLE_READ — prevents non-repeatable reads",
-                        "SERIALIZABLE — fully isolated, highest overhead",
-                        "Practical trade-off between consistency and performance"
-                )));
+            List<InterviewQuestion> questions = new ArrayList<>();
+            for (QuestionGenerationResult.AiQuestion aiQ : result.questions()) {
+                DifficultyLevel level;
+                try {
+                    level = DifficultyLevel.valueOf(aiQ.difficultyLevel().toUpperCase().trim());
+                } catch (Exception e) {
+                    level = DifficultyLevel.MEDIUM; // Fallback
+                }
 
-        questions.add(buildQuestion(candidate, round, DifficultyLevel.HARD,
-                "How would you design a scalable REST API for the e-commerce platform you built?",
-                List.of(
-                        "Stateless design with JWT",
-                        "Pagination for list endpoints",
-                        "Caching strategy (Redis/ETag)",
-                        "Rate limiting",
-                        "API versioning"
-                )));
-
-        return questions;
+                questions.add(buildQuestion(candidate, round, level, aiQ.questionText(), aiQ.keyPoints()));
+            }
+            return questions;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate questions via AI: " + e.getMessage(), e);
+        }
     }
 
     private InterviewQuestion buildQuestion(
