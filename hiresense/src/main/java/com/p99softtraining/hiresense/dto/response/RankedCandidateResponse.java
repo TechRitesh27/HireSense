@@ -13,5 +13,5 @@ public class RankedCandidateResponse {
     private UUID candidateId;
     private String fullName;
     private String email;
-    private int totalScore;
+    private double roundScore;
 }

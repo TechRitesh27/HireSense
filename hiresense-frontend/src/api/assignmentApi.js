@@ -1,9 +1,9 @@
 import axiosInstance from './axiosInstance';
 
-export const assignInterviewers = (hiringDriveId, candidateId, interviewerIds) =>
+export const assignInterviewers = (hiringDriveId, candidateId, interviewerIds, interviewRoundId) =>
   axiosInstance.post(
     `/hiring-drives/${hiringDriveId}/candidates/${candidateId}/assignments`,
-    { interviewerIds }
+    { interviewerIds, interviewRoundId }
   );
 
 export const getAssignmentsForDrive = (hiringDriveId) =>

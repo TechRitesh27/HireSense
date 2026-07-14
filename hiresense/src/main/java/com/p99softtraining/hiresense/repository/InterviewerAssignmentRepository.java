@@ -22,4 +22,6 @@ public interface InterviewerAssignmentRepository extends JpaRepository<Interview
             UUID interviewerId,
             UUID companyId
     );
+
+    List<InterviewerAssignment> findByInterviewerId(UUID interviewerId);
 }

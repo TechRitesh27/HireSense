@@ -7,6 +7,7 @@ import { ArrowBack, PersonSearch } from '@mui/icons-material';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import InterviewerLayout from '../../components/InterviewerLayout';
 import { getCandidateProfile } from '../../api/resumeApi';
+import { getCandidateWorkflowHint, getCandidateWorkflowLabel } from '../../utils/interviewWorkflow';
 
 function InterviewerCandidateProfilePage() {
   const { candidateId } = useParams();
@@ -51,6 +52,9 @@ function InterviewerCandidateProfilePage() {
       <Box sx={{ mb: 3 }}>
         <Typography variant="h5">{candidateName}</Typography>
         <Typography variant="body2" color="text.secondary">Resume Profile</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          Workflow: {getCandidateWorkflowLabel('ASSIGNED')} · {getCandidateWorkflowHint('ASSIGNED')}
+        </Typography>
       </Box>
 
       {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
@@ -76,9 +80,37 @@ function InterviewerCandidateProfilePage() {
               <Divider />
               <CardContent>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {profile.skills?.map((skill) => (
-                    <Chip key={skill} label={skill} size="small" variant="outlined" color="primary" />
-                  ))}
+                  {(() => {
+                    const raw = profile.skills;
+                    let list = [];
+                    if (!raw) list = [];
+                    else if (Array.isArray(raw)) list = raw;
+                    else if (typeof raw === 'string') {
+                      try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) list = parsed;
+                        else if (parsed && typeof parsed === 'object') {
+                          if (Array.isArray(parsed.skills)) list = parsed.skills;
+                          else list = Object.values(parsed).flatMap(v => (typeof v === 'string' ? v.split(',') : []));
+                        } else {
+                          list = raw.split(',');
+                        }
+                      } catch (e) {
+                        list = raw.split(',');
+                      }
+                    } else if (typeof raw === 'object') {
+                      if (Array.isArray(raw.skills)) list = raw.skills;
+                      else list = Object.values(raw).flatMap(v => (typeof v === 'string' ? v.split(',') : []));
+                    }
+
+                    return list.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">No skills found.</Typography>
+                    ) : (
+                      list.map((skill) => (
+                        <Chip key={String(skill)} label={String(skill).trim()} size="small" variant="outlined" color="primary" />
+                      ))
+                    );
+                  })()}
                 </Box>
                 {profile.parsedAt && (
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>

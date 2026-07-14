@@ -1,7 +1,10 @@
 package com.p99softtraining.hiresense.controller;
 
+import com.p99softtraining.hiresense.dto.request.AddCustomQuestionRequest;
 import com.p99softtraining.hiresense.dto.request.EvaluateQuestionRequest;
-import com.p99softtraining.hiresense.dto.request.MarkKeyPointsRequest;
+import com.p99softtraining.hiresense.dto.request.StartSessionRequest;
+import com.p99softtraining.hiresense.dto.response.AssignedCandidateResponse;
+import com.p99softtraining.hiresense.dto.response.InterviewQuestionResponse;
 import com.p99softtraining.hiresense.dto.response.InterviewSessionResponse;
 import com.p99softtraining.hiresense.service.InterviewExecutionService;
 import jakarta.validation.Valid;
@@ -11,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -19,20 +23,20 @@ public class InterviewExecutionController {
 
     private final InterviewExecutionService interviewExecutionService;
 
-    /** Start a new session for an assigned candidate in a round */
-    @PostMapping("/api/v1/candidates/{candidateId}/rounds/{roundId}/sessions")
+    /** Start a pre-created PENDING session: generate AI questions, transition to IN_PROGRESS */
+    @PostMapping("/api/v1/sessions/{sessionId}/start")
     @PreAuthorize("hasRole('INTERVIEWER')")
     public ResponseEntity<InterviewSessionResponse> startSession(
-            @PathVariable UUID candidateId,
-            @PathVariable UUID roundId
+            @PathVariable UUID sessionId,
+            @Valid @RequestBody StartSessionRequest request
     ) {
         return new ResponseEntity<>(
-                interviewExecutionService.startSession(candidateId, roundId),
-                HttpStatus.CREATED
+                interviewExecutionService.startSession(sessionId, request),
+                HttpStatus.OK
         );
     }
 
-    /** Get the session with all questions and current key point state */
+    /** Get the session with all questions and their current evaluation state */
     @GetMapping("/api/v1/sessions/{sessionId}")
     @PreAuthorize("hasRole('INTERVIEWER')")
     public ResponseEntity<InterviewSessionResponse> getSession(
@@ -43,21 +47,21 @@ public class InterviewExecutionController {
         );
     }
 
-    /** Mark key points as covered for a specific question */
-    @PatchMapping("/api/v1/sessions/{sessionId}/questions/{questionId}/key-points")
+    /** Add a custom (non-AI) question to an IN_PROGRESS session */
+    @PostMapping("/api/v1/sessions/{sessionId}/questions")
     @PreAuthorize("hasRole('INTERVIEWER')")
-    public ResponseEntity<InterviewSessionResponse> markKeyPoints(
+    public ResponseEntity<InterviewQuestionResponse> addCustomQuestion(
             @PathVariable UUID sessionId,
-            @PathVariable UUID questionId,
-            @Valid @RequestBody MarkKeyPointsRequest request
+            @Valid @RequestBody AddCustomQuestionRequest request
     ) {
-        return ResponseEntity.ok(
-                interviewExecutionService.markKeyPoints(sessionId, questionId, request)
+        return new ResponseEntity<>(
+                interviewExecutionService.addCustomQuestion(sessionId, request),
+                HttpStatus.CREATED
         );
     }
 
-    /** Save evaluator notes and additional score for a question */
-    @PatchMapping("/api/v1/sessions/{sessionId}/questions/{questionId}/evaluate")
+    /** Record or overwrite the notes and verdict for a question within a session */
+    @PutMapping("/api/v1/sessions/{sessionId}/questions/{questionId}/evaluate")
     @PreAuthorize("hasRole('INTERVIEWER')")
     public ResponseEntity<InterviewSessionResponse> evaluateQuestion(
             @PathVariable UUID sessionId,
@@ -69,7 +73,7 @@ public class InterviewExecutionController {
         );
     }
 
-    /** Submit session as complete — triggers scoring */
+    /** Submit session as complete — triggers scoring and round score recalculation */
     @PostMapping("/api/v1/sessions/{sessionId}/submit")
     @PreAuthorize("hasRole('INTERVIEWER')")
     public ResponseEntity<InterviewSessionResponse> submitSession(
@@ -77,6 +81,15 @@ public class InterviewExecutionController {
     ) {
         return ResponseEntity.ok(
                 interviewExecutionService.submitSession(sessionId)
+        );
+    }
+
+    /** Get all candidates assigned to the authenticated interviewer across active hiring drives */
+    @GetMapping("/api/v1/interviewers/me/assigned-candidates")
+    @PreAuthorize("hasRole('INTERVIEWER')")
+    public ResponseEntity<List<AssignedCandidateResponse>> getAssignedCandidates() {
+        return ResponseEntity.ok(
+                interviewExecutionService.getAssignedCandidates()
         );
     }
 }

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/hiring-drives/{hiringDriveId}/rankings")
+@RequestMapping("/api/v1/hiring-drives/{hiringDriveId}/rounds/{roundId}/rankings")
 @RequiredArgsConstructor
 public class RankingController {
 
@@ -20,10 +20,11 @@ public class RankingController {
     @GetMapping
     @PreAuthorize("hasRole('COMPANY_ADMIN')")
     public ResponseEntity<List<RankedCandidateResponse>> getRankedResults(
-            @PathVariable UUID hiringDriveId
+            @PathVariable UUID hiringDriveId,
+            @PathVariable UUID roundId
     ) {
         return ResponseEntity.ok(
-                rankingService.getRankedResults(hiringDriveId)
+                rankingService.getRankedResults(hiringDriveId, roundId)
         );
     }
 }

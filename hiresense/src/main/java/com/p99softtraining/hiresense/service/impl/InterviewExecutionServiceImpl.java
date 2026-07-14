@@ -1,24 +1,35 @@
 package com.p99softtraining.hiresense.service.impl;
 
+import com.p99softtraining.hiresense.dto.GeneratedQuestion;
+import com.p99softtraining.hiresense.dto.request.AddCustomQuestionRequest;
 import com.p99softtraining.hiresense.dto.request.EvaluateQuestionRequest;
-import com.p99softtraining.hiresense.dto.request.MarkKeyPointsRequest;
+import com.p99softtraining.hiresense.dto.request.StartSessionRequest;
+import com.p99softtraining.hiresense.dto.response.AssignedCandidateResponse;
 import com.p99softtraining.hiresense.dto.response.InterviewQuestionResponse;
 import com.p99softtraining.hiresense.dto.response.InterviewSessionResponse;
-import com.p99softtraining.hiresense.dto.response.KeyPointResponse;
 import com.p99softtraining.hiresense.entity.*;
-import com.p99softtraining.hiresense.enums.CandidateStatus;
+import com.p99softtraining.hiresense.enums.HiringDriveStatus;
+import com.p99softtraining.hiresense.enums.ProfileStatus;
+import com.p99softtraining.hiresense.enums.QuestionSource;
 import com.p99softtraining.hiresense.enums.SessionStatus;
 import com.p99softtraining.hiresense.exception.ResourceNotFoundException;
 import com.p99softtraining.hiresense.repository.*;
+import com.p99softtraining.hiresense.service.AiQuestionGenerator;
 import com.p99softtraining.hiresense.service.InterviewExecutionService;
 import com.p99softtraining.hiresense.service.SecurityService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,85 +41,83 @@ public class InterviewExecutionServiceImpl implements InterviewExecutionService 
     private final InterviewerAssignmentRepository assignmentRepository;
     private final CandidateRepository candidateRepository;
     private final InterviewRoundRepository roundRepository;
-    private final KeyPointRepository keyPointRepository;
     private final EvaluationResultRepository evaluationResultRepository;
+    private final CandidateProfileRepository profileRepository;
+    private final AiQuestionGenerator aiQuestionGenerator;
     private final SecurityService securityService;
 
     @Override
     @Transactional
-    public InterviewSessionResponse startSession(UUID candidateId, UUID roundId) {
+    public InterviewSessionResponse startSession(UUID sessionId, StartSessionRequest request) {
+        // 1. Load session (404 if not found)
+        InterviewSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+
+        // 2. Get the authenticated interviewer
         User interviewer = securityService.getCurrentUser();
 
-        // Verify interviewer is assigned to this candidate
-        boolean isAssigned = assignmentRepository
-                .findByInterviewerIdAndHiringDrive_Company_IdOrderByCreatedAtDesc(
-                        interviewer.getId(),
-                        interviewer.getCompany().getId()
-                )
-                .stream()
-                .anyMatch(a -> a.getCandidate().getId().equals(candidateId));
+        // 3. Verify interviewer is assigned to this session's candidate in the hiring drive (403 if not)
+        UUID hiringDriveId = session.getInterviewRound().getHiringDrive().getId();
+        UUID candidateId = session.getCandidate().getId();
+        boolean isAssigned = assignmentRepository.existsByHiringDriveIdAndInterviewerIdAndCandidateId(
+                hiringDriveId, interviewer.getId(), candidateId);
 
         if (!isAssigned) {
-            throw new IllegalStateException("You are not assigned to this candidate.");
+            throw new AccessDeniedException("You are not assigned to this candidate in the hiring drive.");
         }
 
-        Candidate candidate = candidateRepository.findById(candidateId)
-                .orElseThrow(() -> new ResourceNotFoundException("Candidate not found"));
+        // 4. Validate session state is PENDING (409 if not)
+        if (session.getStatus() != SessionStatus.PENDING) {
+            throw new IllegalStateException("Session cannot be started: current status is " + session.getStatus());
+        }
 
-        InterviewRound round = roundRepository.findById(roundId)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview round not found"));
+        // 5. Validate CandidateProfile exists and is PARSED (422 if not)
+        CandidateProfile profile = profileRepository.findByCandidateId(candidateId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatusCode.valueOf(422),
+                        "Candidate profile not found. The resume must be parsed before starting the session."));
 
-        // Prevent duplicate session
-        sessionRepository.findByInterviewerIdAndCandidateIdAndInterviewRoundId(
-                interviewer.getId(), candidateId, roundId)
-                .ifPresent(s -> {
-                    throw new IllegalStateException("Session already exists for this interviewer/candidate/round.");
-                });
+        if (profile.getStatus() != ProfileStatus.PARSED) {
+            throw new ResponseStatusException(
+                    HttpStatusCode.valueOf(422),
+                    "Candidate profile is not yet parsed (current status: " + profile.getStatus() + "). " +
+                    "The resume must be parsed before starting the session.");
+        }
 
-        InterviewSession session = new InterviewSession();
-        session.setInterviewer(interviewer);
-        session.setCandidate(candidate);
-        session.setInterviewRound(round);
+        // 6. Persist difficultyLevel and questionCount on the session
+        session.setDifficultyLevel(request.getDifficultyLevel());
+        session.setQuestionCount(request.getQuestionCount());
+
+        // 7. Call AiQuestionGenerator.generate(primarySkills, secondarySkills, difficulty, count)
+        List<String> primarySkills = parseSkills(profile.getPrimarySkills());
+        List<String> secondarySkills = parseSkills(profile.getSecondarySkills());
+
+        List<GeneratedQuestion> generatedQuestions = aiQuestionGenerator.generate(
+                primarySkills, secondarySkills, request.getDifficultyLevel(), request.getQuestionCount());
+
+        // 8. Persist each GeneratedQuestion as an InterviewQuestion with source=AI_GENERATED
+        for (GeneratedQuestion gq : generatedQuestions) {
+            InterviewQuestion question = new InterviewQuestion();
+            question.setInterviewSession(session);
+            question.setQuestionText(gq.questionText());
+            question.setDifficultyLevel(gq.difficultyLevel());
+            question.setSource(QuestionSource.AI_GENERATED);
+            question.setSkill(gq.skill());
+            questionRepository.save(question);
+        }
+
+        // 9. Transition session to IN_PROGRESS and save
         session.setStatus(SessionStatus.IN_PROGRESS);
+        sessionRepository.save(session);
 
-        // Update candidate status
-        if (candidate.getStatus() == CandidateStatus.ASSIGNED) {
-            candidate.setStatus(CandidateStatus.INTERVIEW_IN_PROGRESS);
-            candidateRepository.save(candidate);
-        }
-
-        return toResponse(sessionRepository.save(session));
+        // 10. Return InterviewSessionResponse with all questions
+        return toResponse(session);
     }
 
     @Override
     @Transactional(readOnly = true)
     public InterviewSessionResponse getSession(UUID sessionId) {
         InterviewSession session = resolveSession(sessionId);
-        return toResponse(session);
-    }
-
-    @Override
-    @Transactional
-    public InterviewSessionResponse markKeyPoints(UUID sessionId, UUID questionId, MarkKeyPointsRequest request) {
-        InterviewSession session = resolveSession(sessionId);
-        validateSessionOpen(session);
-
-        // Validate question exists
-        if (!questionRepository.existsById(questionId)) {
-            throw new ResourceNotFoundException("Question not found");
-        }
-
-        // Mark each requested key point as covered
-        for (UUID kpId : request.getCoveredKeyPointIds()) {
-            KeyPoint kp = keyPointRepository.findById(kpId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Key point not found: " + kpId));
-            if (!kp.getInterviewQuestion().getId().equals(questionId)) {
-                throw new IllegalArgumentException("Key point does not belong to the specified question.");
-            }
-            kp.setCovered(true);
-            keyPointRepository.save(kp);
-        }
-
         return toResponse(session);
     }
 
@@ -121,6 +130,12 @@ public class InterviewExecutionServiceImpl implements InterviewExecutionService 
         InterviewQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Question not found"));
 
+        // Req 5.5/5.6: verify the question belongs to this session
+        if (question.getInterviewSession() == null ||
+            !question.getInterviewSession().getId().equals(sessionId)) {
+            throw new ResourceNotFoundException("Question not found in this session");
+        }
+
         SessionQuestionEval eval = evalRepository
                 .findByInterviewSessionIdAndInterviewQuestionId(sessionId, questionId)
                 .orElseGet(() -> {
@@ -130,8 +145,8 @@ public class InterviewExecutionServiceImpl implements InterviewExecutionService 
                     return e;
                 });
 
-        eval.setEvaluatorNotes(request.getEvaluatorNotes());
-        eval.setAdditionalScore(request.getAdditionalScore());
+        eval.setNotes(request.getNotes());
+        eval.setVerdict(request.getVerdict());
         evalRepository.save(eval);
 
         return toResponse(session);
@@ -140,105 +155,203 @@ public class InterviewExecutionServiceImpl implements InterviewExecutionService 
     @Override
     @Transactional
     public InterviewSessionResponse submitSession(UUID sessionId) {
+        // 1. Load session — 404 if not found, 403 if not the session's interviewer
         InterviewSession session = resolveSession(sessionId);
+
+        // 2. Verify session is IN_PROGRESS — 409 if not
         validateSessionOpen(session);
 
-        session.setStatus(SessionStatus.COMPLETED);
+        // 3. Compute sessionScore from evaluated questions
+        List<SessionQuestionEval> evals = evalRepository.findByInterviewSessionId(session.getId());
+        List<SessionQuestionEval> evaluated = evals.stream()
+                .filter(e -> e.getVerdict() != null)
+                .toList();
+
+        double sessionScore;
+        if (evaluated.isEmpty()) {
+            sessionScore = 0.0;
+        } else {
+            int earnedPoints = evaluated.stream().mapToInt(e -> e.getVerdict().points()).sum();
+            int maxPoints = evaluated.size() * 3;
+            sessionScore = Math.round((earnedPoints / (double) maxPoints) * 100.0 * 100.0) / 100.0;
+        }
+
+        // 4. Persist sessionScore, completedAt, and COMPLETED status
+        session.setSessionScore(sessionScore);
         session.setCompletedAt(LocalDateTime.now());
+        session.setStatus(SessionStatus.COMPLETED);
         sessionRepository.save(session);
 
-        // Compute and persist score for this session
-        computeAndPersistScore(session);
+        // 5. Trigger round score recalculation
+        recalculateRoundScore(session);
 
-        // Update candidate status if all sessions done
-        Candidate candidate = session.getCandidate();
-        candidate.setStatus(CandidateStatus.INTERVIEW_COMPLETED);
-        candidateRepository.save(candidate);
-
+        // 6. Return InterviewSessionResponse
         return toResponse(session);
     }
 
+    @Override
+    @Transactional
+    public InterviewQuestionResponse addCustomQuestion(UUID sessionId, AddCustomQuestionRequest request) {
+        // 1. Resolve session: verifies INTERVIEWER owns it (403 if not), 404 if not found
+        InterviewSession session = resolveSession(sessionId);
+
+        // 2. Verify session is IN_PROGRESS (409 if not)
+        if (session.getStatus() != SessionStatus.IN_PROGRESS) {
+            throw new IllegalStateException(
+                    "Cannot add question: session is not IN_PROGRESS (current status: " + session.getStatus() + ")");
+        }
+
+        // 3. Persist InterviewQuestion with source=CUSTOM
+        InterviewQuestion question = new InterviewQuestion();
+        question.setInterviewSession(session);
+        question.setQuestionText(request.getQuestionText());
+        question.setDifficultyLevel(request.getDifficultyLevel());
+        question.setSource(QuestionSource.CUSTOM);
+        questionRepository.save(question);
+
+        // 4. Return InterviewQuestionResponse
+        return InterviewQuestionResponse.builder()
+                .id(question.getId())
+                .questionText(question.getQuestionText())
+                .difficultyLevel(question.getDifficultyLevel())
+                .source(question.getSource())
+                .skill(null)
+                .notes(null)
+                .verdict(null)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AssignedCandidateResponse> getAssignedCandidates() {
+        // 1. Get the currently authenticated INTERVIEWER
+        User interviewer = securityService.getCurrentUser();
+
+        // 2. Fetch all InterviewerAssignment records for this interviewer
+        List<InterviewerAssignment> assignments = assignmentRepository.findByInterviewerId(interviewer.getId());
+
+        // 3. Filter to only active hiring drives, then map each to AssignedCandidateResponse
+        return assignments.stream()
+                .filter(a -> a.getHiringDrive().getStatus() == HiringDriveStatus.ACTIVE)
+                .map(assignment -> {
+                    HiringDrive drive = assignment.getHiringDrive();
+                    Candidate candidate = assignment.getCandidate();
+
+                    // Find the interviewer's session for this candidate in this hiring drive (if any)
+                    InterviewSession session = sessionRepository
+                            .findByCandidateIdAndInterviewerIdAndInterviewRound_HiringDriveId(
+                                    candidate.getId(), interviewer.getId(), drive.getId())
+                            .orElse(null);
+
+                    return AssignedCandidateResponse.builder()
+                            .candidateId(candidate.getId())
+                            .fullName(candidate.getFullName())
+                            .email(candidate.getEmail())
+                            .hiringDriveId(drive.getId())
+                            .hiringDriveName(drive.getTitle())
+                            .sessionId(session != null ? session.getId() : null)
+                            .sessionStatus(session != null ? session.getStatus() : null)
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Splits a comma-separated skills string into a trimmed list.
+     * Returns an empty list if the input is null or blank.
+     */
+    private List<String> parseSkills(String skillsCsv) {
+        if (skillsCsv == null || skillsCsv.isBlank()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(skillsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+    }
 
     private InterviewSession resolveSession(UUID sessionId) {
         User currentUser = securityService.getCurrentUser();
         InterviewSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
 
-        // Interviewers can only access their own sessions
+        // Interviewers can only access their own sessions (403 if not the session's designated interviewer)
         if (!session.getInterviewer().getId().equals(currentUser.getId())) {
-            throw new ResourceNotFoundException("Session not found");
+            throw new AccessDeniedException("You are not the designated interviewer for this session.");
         }
         return session;
     }
 
     private void validateSessionOpen(InterviewSession session) {
-        if (session.getStatus() == SessionStatus.COMPLETED) {
-            throw new IllegalStateException("Session is already completed and cannot be modified.");
+        if (session.getStatus() != SessionStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Session is not IN_PROGRESS (current status: " + session.getStatus() + ")");
         }
     }
 
-    private void computeAndPersistScore(InterviewSession session) {
+    /**
+     * Recalculates the round score for the candidate+round of the given session
+     * by averaging all COMPLETED session scores, then upserts the EvaluationResult.
+     */
+    private void recalculateRoundScore(InterviewSession session) {
         UUID candidateId = session.getCandidate().getId();
-        UUID hiringDriveId = session.getCandidate().getHiringDrive().getId();
-        UUID roundId = session.getInterviewRound().getId();
+        UUID interviewRoundId = session.getInterviewRound().getId();
+        UUID hiringDriveId = session.getInterviewRound().getHiringDrive().getId();
 
-        // Count covered key points for this round
-        List<InterviewQuestion> questions = questionRepository
-                .findByCandidateIdAndInterviewRoundIdOrderByDifficultyLevel(candidateId, roundId);
+        // Fetch all COMPLETED sessions for this candidate in this round
+        List<InterviewSession> completedSessions = sessionRepository
+                .findByCandidateIdAndInterviewRoundIdAndStatus(
+                        candidateId, interviewRoundId, SessionStatus.COMPLETED);
 
-        int coveredCount = questions.stream()
-                .flatMap(q -> q.getKeyPoints().stream())
-                .mapToInt(kp -> kp.isCovered() ? 1 : 0)
-                .sum();
+        double roundScore = completedSessions.stream()
+                .filter(s -> s.getSessionScore() != null)
+                .mapToDouble(InterviewSession::getSessionScore)
+                .average()
+                .orElse(0.0);
 
-        // Sum additional scores from session evals
-        int additionalTotal = evalRepository.findByInterviewSessionId(session.getId())
-                .stream()
-                .mapToInt(SessionQuestionEval::getAdditionalScore)
-                .sum();
+        // Round to 2 decimal places
+        roundScore = Math.round(roundScore * 100.0) / 100.0;
 
-        int sessionScore = coveredCount + additionalTotal;
-
-        // Upsert EvaluationResult (add to existing total score across rounds)
+        // Upsert EvaluationResult keyed by (candidate, hiringDrive, interviewRound)
         EvaluationResult result = evaluationResultRepository
-                .findByCandidateIdAndHiringDriveId(candidateId, hiringDriveId)
+                .findByCandidateIdAndHiringDriveIdAndInterviewRoundId(
+                        candidateId, hiringDriveId, interviewRoundId)
                 .orElseGet(() -> {
                     EvaluationResult r = new EvaluationResult();
                     r.setCandidate(session.getCandidate());
-                    r.setHiringDrive(session.getCandidate().getHiringDrive());
-                    r.setTotalScore(0);
+                    r.setHiringDrive(session.getInterviewRound().getHiringDrive());
+                    r.setInterviewRound(session.getInterviewRound());
                     return r;
                 });
 
-        result.setTotalScore(result.getTotalScore() + sessionScore);
+        result.setTotalScore(roundScore);
         evaluationResultRepository.save(result);
     }
 
     private InterviewSessionResponse toResponse(InterviewSession session) {
-        UUID candidateId = session.getCandidate().getId();
-        UUID roundId = session.getInterviewRound().getId();
-
         List<InterviewQuestion> questions = questionRepository
-                .findByCandidateIdAndInterviewRoundIdOrderByDifficultyLevel(candidateId, roundId);
+                .findByInterviewSessionIdOrderByDifficultyLevel(session.getId());
+
+        // Load evals for this session to populate notes and verdict on each question
+        List<SessionQuestionEval> evals = evalRepository.findByInterviewSessionId(session.getId());
 
         List<InterviewQuestionResponse> questionResponses = questions.stream()
                 .map(q -> {
-                    List<KeyPointResponse> kpResponses = q.getKeyPoints() == null
-                            ? List.of()
-                            : q.getKeyPoints().stream()
-                                    .map(kp -> KeyPointResponse.builder()
-                                            .id(kp.getId())
-                                            .pointText(kp.getPointText())
-                                            .covered(kp.isCovered())
-                                            .build())
-                                    .toList();
+                    // Find the eval for this question, if any
+                    SessionQuestionEval eval = evals.stream()
+                            .filter(e -> e.getInterviewQuestion().getId().equals(q.getId()))
+                            .findFirst()
+                            .orElse(null);
 
                     return InterviewQuestionResponse.builder()
                             .id(q.getId())
                             .questionText(q.getQuestionText())
                             .difficultyLevel(q.getDifficultyLevel())
-                            .keyPoints(kpResponses)
+                            .source(q.getSource())
+                            .skill(q.getSkill())
+                            .notes(eval != null ? eval.getNotes() : null)
+                            .verdict(eval != null ? eval.getVerdict() : null)
                             .build();
                 })
                 .toList();
@@ -250,6 +363,9 @@ public class InterviewExecutionServiceImpl implements InterviewExecutionService 
                 .interviewRoundId(session.getInterviewRound().getId())
                 .interviewRoundName(session.getInterviewRound().getName())
                 .status(session.getStatus())
+                .difficultyLevel(session.getDifficultyLevel())
+                .questionCount(session.getQuestionCount())
+                .sessionScore(session.getSessionScore())
                 .completedAt(session.getCompletedAt())
                 .questions(questionResponses)
                 .build();

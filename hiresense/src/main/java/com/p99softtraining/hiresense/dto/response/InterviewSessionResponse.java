@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.dto.response;
 
+import com.p99softtraining.hiresense.enums.DifficultyLevel;
 import com.p99softtraining.hiresense.enums.SessionStatus;
 import lombok.Builder;
 import lombok.Getter;
@@ -19,5 +20,8 @@ public class InterviewSessionResponse {
     private String interviewRoundName;
     private SessionStatus status;
     private LocalDateTime completedAt;
+    private DifficultyLevel difficultyLevel;
+    private Integer questionCount;
+    private Double sessionScore;
     private List<InterviewQuestionResponse> questions;
 }

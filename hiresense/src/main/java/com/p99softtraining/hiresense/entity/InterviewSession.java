@@ -1,5 +1,6 @@
 package com.p99softtraining.hiresense.entity;
 
+import com.p99softtraining.hiresense.enums.DifficultyLevel;
 import com.p99softtraining.hiresense.enums.SessionStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -36,6 +37,14 @@ public class InterviewSession extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private SessionStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private DifficultyLevel difficultyLevel;
+
+    private Integer questionCount;
+
+    private Double sessionScore;
 
     private LocalDateTime completedAt;
 }

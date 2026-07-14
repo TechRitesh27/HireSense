@@ -15,7 +15,8 @@ public class CandidateProfileResponse {
     private UUID id;
     private UUID candidateId;
     private String candidateFullName;
-    private List<String> skills;
+    private List<String> primarySkills;
+    private List<String> secondarySkills;
     private List<CandidateProjectResponse> projects;
     private ProfileStatus status;
     private LocalDateTime parsedAt;

@@ -7,6 +7,6 @@ import java.util.UUID;
 
 public interface RankingService {
 
-    /** Returns all candidates in a hiring drive ranked by total score (desc) */
-    List<RankedCandidateResponse> getRankedResults(UUID hiringDriveId);
+    /** Returns candidates in a hiring drive round ranked by round score (desc) */
+    List<RankedCandidateResponse> getRankedResults(UUID hiringDriveId, UUID roundId);
 }
