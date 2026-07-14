@@ -1,14 +1,14 @@
 package com.p99softtraining.hiresense.entity;
 
+import com.p99softtraining.hiresense.enums.Verdict;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
  * Stores the interviewer's per-question evaluation within a session:
- * - which key points were marked covered
  * - evaluator notes
- * - additional numeric score (0–10)
+ * - verdict (GOOD, AVERAGE, POOR)
  */
 @Getter
 @Setter
@@ -32,10 +32,10 @@ public class SessionQuestionEval extends BaseEntity {
     @JoinColumn(name = "interview_question_id", nullable = false)
     private InterviewQuestion interviewQuestion;
 
-    @Column(length = 3000)
-    private String evaluatorNotes;
+    @Column(name = "evaluator_notes", length = 3000)
+    private String notes;
 
-    // Additional score awarded by the interviewer (0–10)
-    @Column(nullable = false)
-    private int additionalScore = 0;
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private Verdict verdict;
 }

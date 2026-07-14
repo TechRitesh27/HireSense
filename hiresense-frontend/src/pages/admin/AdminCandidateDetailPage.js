@@ -12,10 +12,7 @@ import {
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { parseResume, getCandidateProfile } from '../../api/resumeApi';
-import { generateQuestions, getQuestions } from '../../api/questionApi';
-import { getRounds } from '../../api/roundApi';
-
-const DIFFICULTY_COLORS = { EASY: 'success', MEDIUM: 'warning', HARD: 'error' };
+import { getCandidateWorkflowHint, getCandidateWorkflowLabel } from '../../utils/interviewWorkflow';
 
 function TabPanel({ children, value, index }) {
   return value === index ? <Box sx={{ pt: 3 }}>{children}</Box> : null;
@@ -36,13 +33,6 @@ function AdminCandidateDetailPage() {
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
 
-  const [rounds, setRounds] = useState([]);
-  const [selectedRoundId, setSelectedRoundId] = useState('');
-  const [questions, setQuestions] = useState([]);
-  const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionsError, setQuestionsError] = useState('');
-  const [generating, setGenerating] = useState(false);
-
   // Load existing profile
   const fetchProfile = async () => {
     try {
@@ -56,21 +46,8 @@ function AdminCandidateDetailPage() {
     }
   };
 
-  // Load rounds for question generation
-  const fetchRounds = async () => {
-    if (!hiringDriveId) return;
-    try {
-      const res = await getRounds(hiringDriveId);
-      setRounds(res.data);
-      if (res.data.length > 0) setSelectedRoundId(res.data[0].id);
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     fetchProfile();
-    fetchRounds();
   }, [candidateId]);
 
   const handleParseResume = async () => {
@@ -87,41 +64,6 @@ function AdminCandidateDetailPage() {
       setProfileLoading(false);
     }
   };
-
-  const handleGenerateQuestions = async () => {
-    if (!selectedRoundId) return;
-    setGenerating(true);
-    setQuestionsError('');
-    try {
-      const res = await generateQuestions(candidateId, selectedRoundId);
-      setQuestions(res.data);
-    } catch (err) {
-      setQuestionsError(err.response?.data || 'Failed to generate questions.');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleLoadQuestions = async () => {
-    if (!selectedRoundId) return;
-    setQuestionsLoading(true);
-    setQuestionsError('');
-    try {
-      const res = await getQuestions(candidateId, selectedRoundId);
-      setQuestions(res.data);
-    } catch (err) {
-      setQuestionsError(err.response?.data || 'No questions found for this round.');
-    } finally {
-      setQuestionsLoading(false);
-    }
-  };
-
-  // Group questions by difficulty
-  const grouped = questions.reduce((acc, q) => {
-    acc[q.difficultyLevel] = acc[q.difficultyLevel] || [];
-    acc[q.difficultyLevel].push(q);
-    return acc;
-  }, {});
 
   return (
     <AdminLayout>
@@ -143,10 +85,13 @@ function AdminCandidateDetailPage() {
       </Breadcrumbs>
 
       <Typography variant="h5" sx={{ mb: 1 }}>{candidateName}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Workflow: {getCandidateWorkflowLabel('IMPORTED')} · {getCandidateWorkflowHint('IMPORTED')}
+      </Typography>
 
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 1, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Resume Profile" />
-        <Tab label="Questions" />
+        <Tab label="Session Questions" />
       </Tabs>
 
       {/* ── Tab 0: Resume Profile ── */}
@@ -176,9 +121,37 @@ function AdminCandidateDetailPage() {
                 <Divider />
                 <CardContent>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {profile.skills?.map((skill) => (
-                      <Chip key={skill} label={skill} size="small" variant="outlined" color="primary" />
-                    ))}
+                    {(() => {
+                      const raw = profile.skills;
+                      let list = [];
+                      if (!raw) list = [];
+                      else if (Array.isArray(raw)) list = raw;
+                      else if (typeof raw === 'string') {
+                        try {
+                          const parsed = JSON.parse(raw);
+                          if (Array.isArray(parsed)) list = parsed;
+                          else if (parsed && typeof parsed === 'object') {
+                            if (Array.isArray(parsed.skills)) list = parsed.skills;
+                            else list = Object.values(parsed).flatMap(v => (typeof v === 'string' ? v.split(',') : []));
+                          } else {
+                            list = raw.split(',');
+                          }
+                        } catch (e) {
+                          list = raw.split(',');
+                        }
+                      } else if (typeof raw === 'object') {
+                        if (Array.isArray(raw.skills)) list = raw.skills;
+                        else list = Object.values(raw).flatMap(v => (typeof v === 'string' ? v.split(',') : []));
+                      }
+
+                      return list.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No skills found.</Typography>
+                      ) : (
+                        list.map((skill) => (
+                          <Chip key={String(skill)} label={String(skill).trim()} size="small" variant="outlined" color="primary" />
+                        ))
+                      );
+                    })()}
                   </Box>
                   <Box sx={{ mt: 1.5 }}>
                     <Chip
@@ -223,92 +196,15 @@ function AdminCandidateDetailPage() {
         )}
       </TabPanel>
 
-      {/* ── Tab 1: Questions ── */}
+      {/* ── Tab 1: Session Questions ── */}
       <TabPanel value={tab} index={1}>
-        {questionsError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setQuestionsError('')}>{questionsError}</Alert>}
-
-        {/* Round selector + actions */}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3, alignItems: 'flex-start' }}>
-          <TextField
-            select
-            label="Select Round"
-            size="small"
-            value={selectedRoundId}
-            onChange={(e) => { setSelectedRoundId(e.target.value); setQuestions([]); }}
-            sx={{ minWidth: 220 }}
-            disabled={rounds.length === 0}
-            helperText={rounds.length === 0 ? 'No rounds found. Create rounds first.' : ''}
-          >
-            {rounds.map((r) => (
-              <MenuItem key={r.id} value={r.id}>{r.name} ({r.roundType})</MenuItem>
-            ))}
-          </TextField>
-
-          <Button
-            variant="outlined"
-            onClick={handleLoadQuestions}
-            disabled={!selectedRoundId || questionsLoading}
-          >
-            Load Existing
-          </Button>
-
-          <Button
-            variant="contained"
-            startIcon={generating ? <CircularProgress size={16} color="inherit" /> : <AutoAwesome />}
-            onClick={handleGenerateQuestions}
-            disabled={!selectedRoundId || generating}
-          >
-            Generate Questions
-          </Button>
-        </Stack>
-
-        {questionsLoading || generating ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}><CircularProgress /></Box>
-        ) : questions.length === 0 ? (
-          <Box sx={{ textAlign: 'center', mt: 6 }}>
-            <AutoAwesome sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-            <Typography color="text.secondary">
-              Select a round and click "Generate Questions" to create interview questions.
-            </Typography>
-          </Box>
-        ) : (
-          <Stack spacing={2}>
-            {['EASY', 'MEDIUM', 'HARD'].map((level) =>
-              grouped[level] ? (
-                <Box key={level}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Chip label={level} color={DIFFICULTY_COLORS[level]} size="small" />
-                    <Typography variant="caption" color="text.secondary">
-                      {grouped[level].length} question{grouped[level].length > 1 ? 's' : ''}
-                    </Typography>
-                  </Box>
-                  {grouped[level].map((q, idx) => (
-                    <Accordion key={q.id} variant="outlined" sx={{ mb: 1 }}>
-                      <AccordionSummary expandIcon={<ExpandMore />}>
-                        <Typography variant="body2" fontWeight={500}>
-                          {idx + 1}. {q.questionText}
-                        </Typography>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                          Key Points
-                        </Typography>
-                        <List dense disablePadding>
-                          {q.keyPoints?.map((kp) => (
-                            <ListItem key={kp.id} disablePadding sx={{ py: 0.25 }}>
-                              <CheckCircleOutline sx={{ fontSize: 16, color: 'text.disabled', mr: 1 }} />
-                              <ListItemText primary={kp.pointText} primaryTypographyProps={{ variant: 'body2' }} />
-                            </ListItem>
-                          ))}
-                        </List>
-                      </AccordionDetails>
-                    </Accordion>
-                  ))}
-                </Box>
-              ) : null
-            )}
-          </Stack>
-        )}
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Questions are generated when the interviewer starts an interview session for this candidate.
+        </Alert>
+        <Typography variant="body2" color="text.secondary">
+          The interviewer selects the difficulty level and number of questions at the moment the session begins,
+          and the questions appear inside the active interview session view.
+        </Typography>
       </TabPanel>
     </AdminLayout>
   );

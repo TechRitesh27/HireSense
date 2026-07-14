@@ -4,8 +4,12 @@ import com.p99softtraining.hiresense.dto.request.AssignCandidateRequest;
 import com.p99softtraining.hiresense.dto.response.AssignedCandidateResponse;
 import com.p99softtraining.hiresense.dto.response.AssignmentResponse;
 import com.p99softtraining.hiresense.entity.InterviewerAssignment;
+import com.p99softtraining.hiresense.entity.InterviewRound;
+import com.p99softtraining.hiresense.entity.InterviewSession;
 import com.p99softtraining.hiresense.mapper.AssignmentMapper;
 import com.p99softtraining.hiresense.repository.InterviewerAssignmentRepository;
+import com.p99softtraining.hiresense.repository.InterviewRoundRepository;
+import com.p99softtraining.hiresense.repository.InterviewSessionRepository;
 import com.p99softtraining.hiresense.service.AssignmentService;
 import com.p99softtraining.hiresense.entity.Candidate;
 import com.p99softtraining.hiresense.entity.Company;
@@ -14,6 +18,7 @@ import com.p99softtraining.hiresense.entity.User;
 import com.p99softtraining.hiresense.enums.CandidateStatus;
 import com.p99softtraining.hiresense.enums.HiringDriveStatus;
 import com.p99softtraining.hiresense.enums.Role;
+import com.p99softtraining.hiresense.enums.SessionStatus;
 import com.p99softtraining.hiresense.exception.ResourceAlreadyExistsException;
 import com.p99softtraining.hiresense.exception.ResourceNotFoundException;
 import com.p99softtraining.hiresense.repository.CandidateRepository;
@@ -36,6 +41,8 @@ public class AssignmentServiceImpl implements AssignmentService {
     private final HiringDriveRepository hiringDriveRepository;
     private final CandidateRepository candidateRepository;
     private final UserRepository userRepository;
+    private final InterviewRoundRepository roundRepository;
+    private final InterviewSessionRepository sessionRepository;
     private final SecurityService securityService;
     private final AssignmentMapper assignmentMapper;
 
@@ -51,6 +58,14 @@ public class AssignmentServiceImpl implements AssignmentService {
         validateHiringDriveIsActive(hiringDrive);
 
         Candidate candidate = resolveHiringDriveCandidate(candidateId, hiringDriveId);
+
+        // Validate the round belongs to this hiring drive
+        InterviewRound round = roundRepository.findById(request.getInterviewRoundId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Interview round not found: " + request.getInterviewRoundId()));
+        if (!round.getHiringDrive().getId().equals(hiringDriveId)) {
+            throw new ResourceNotFoundException("Interview round does not belong to this hiring drive");
+        }
 
         List<InterviewerAssignment> created = new ArrayList<>();
 
@@ -74,6 +89,21 @@ public class AssignmentServiceImpl implements AssignmentService {
             assignment.setCandidate(candidate);
 
             created.add(assignmentRepository.save(assignment));
+
+            // Create a PENDING InterviewSession for this interviewer+candidate+round
+            // (skip if one already exists due to idempotency)
+            boolean sessionExists = sessionRepository
+                    .findByInterviewerIdAndCandidateIdAndInterviewRoundId(
+                            interviewerId, candidateId, round.getId())
+                    .isPresent();
+            if (!sessionExists) {
+                InterviewSession session = new InterviewSession();
+                session.setInterviewer(interviewer);
+                session.setCandidate(candidate);
+                session.setInterviewRound(round);
+                session.setStatus(SessionStatus.PENDING);
+                sessionRepository.save(session);
+            }
         }
 
         // Promote candidate status only if still IMPORTED

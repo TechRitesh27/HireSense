@@ -94,12 +94,22 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
             // Step 9: Build CandidateProfile
             CandidateProfile profile = new CandidateProfile();
             profile.setCandidate(candidate);
-            
-            String skillsStr = String.join(", ", result.skills());
-            if (skillsStr.length() > 2000) {
-                skillsStr = skillsStr.substring(0, 1997) + "...";
+
+            String primarySkillsStr = result.primarySkills() == null
+                    ? ""
+                    : String.join(", ", result.primarySkills());
+            if (primarySkillsStr.length() > 2000) {
+                primarySkillsStr = primarySkillsStr.substring(0, 1997) + "...";
             }
-            profile.setSkills(skillsStr);
+            profile.setPrimarySkills(primarySkillsStr);
+
+            String secondarySkillsStr = result.secondarySkills() == null
+                    ? ""
+                    : String.join(", ", result.secondarySkills());
+            if (secondarySkillsStr.length() > 2000) {
+                secondarySkillsStr = secondarySkillsStr.substring(0, 1997) + "...";
+            }
+            profile.setSecondarySkills(secondarySkillsStr);
             
             profile.setStatus(ProfileStatus.PARSED);
             profile.setParsedAt(LocalDateTime.now());
@@ -170,10 +180,18 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
     }
 
     private CandidateProfileResponse toResponse(CandidateProfile profile) {
-        List<String> skills = profile.getSkills() == null || profile.getSkills().isBlank()
+        List<String> primarySkills = profile.getPrimarySkills() == null || profile.getPrimarySkills().isBlank()
                 ? List.of()
-                : Arrays.stream(profile.getSkills().split(","))
+                : Arrays.stream(profile.getPrimarySkills().split(","))
                         .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+
+        List<String> secondarySkills = profile.getSecondarySkills() == null || profile.getSecondarySkills().isBlank()
+                ? List.of()
+                : Arrays.stream(profile.getSecondarySkills().split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
                         .toList();
 
         List<CandidateProjectResponse> projects = profile.getProjects() == null
@@ -191,7 +209,8 @@ public class ResumeIntelligenceServiceImpl implements ResumeIntelligenceService 
                 .id(profile.getId())
                 .candidateId(profile.getCandidate().getId())
                 .candidateFullName(profile.getCandidate().getFullName())
-                .skills(skills)
+                .primarySkills(primarySkills)
+                .secondarySkills(secondarySkills)
                 .projects(projects)
                 .status(profile.getStatus())
                 .parsedAt(profile.getParsedAt())

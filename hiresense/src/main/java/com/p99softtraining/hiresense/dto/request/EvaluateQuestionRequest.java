@@ -1,7 +1,7 @@
 package com.p99softtraining.hiresense.dto.request;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
+import com.p99softtraining.hiresense.enums.Verdict;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,9 +9,8 @@ import lombok.Setter;
 @Setter
 public class EvaluateQuestionRequest {
 
-    private String evaluatorNotes;
+    private String notes;
 
-    @Min(value = 0, message = "Score must be between 0 and 10")
-    @Max(value = 10, message = "Score must be between 0 and 10")
-    private int additionalScore;
+    @NotNull
+    private Verdict verdict;
 }

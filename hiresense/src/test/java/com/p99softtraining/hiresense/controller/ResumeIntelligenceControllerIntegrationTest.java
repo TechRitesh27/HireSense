@@ -164,7 +164,8 @@ class ResumeIntelligenceControllerIntegrationTest {
         parsedProfile = new CandidateProfile();
         parsedProfile.setId(UUID.randomUUID());
         parsedProfile.setCandidate(candidate);
-        parsedProfile.setSkills("Java, Spring Boot");
+        parsedProfile.setPrimarySkills("Java, Spring Boot");
+        parsedProfile.setSecondarySkills("");
         parsedProfile.setStatus(ProfileStatus.PARSED);
         parsedProfile.setParsedAt(LocalDateTime.now());
         parsedProfile.setProjects(List.of());
@@ -195,7 +196,7 @@ class ResumeIntelligenceControllerIntegrationTest {
                 "Alice Smith Java developer with 5 years of experience in Spring Boot."
         );
         when(aiResumeExtractor.extract(any())).thenReturn(
-                new ResumeExtractionResult(List.of("Java", "Spring Boot"), List.of())
+                new ResumeExtractionResult(List.of("Java", "Spring Boot"), List.of(), List.of())
         );
         when(candidateProfileRepository.save(any())).thenReturn(parsedProfile);
 
@@ -210,8 +211,8 @@ class ResumeIntelligenceControllerIntegrationTest {
      * INTERVIEWER cannot trigger parse.
      * <p>
      * The {@code @PreAuthorize("hasRole('COMPANY_ADMIN')")} throws
-     * {@code AuthorizationDeniedException} which the existing
-     * {@code GlobalExceptionHandler.handleRuntimeException()} maps to HTTP 400.
+     * {@code AuthorizationDeniedException} which the
+     * {@code GlobalExceptionHandler.handleAccessDenied()} maps to HTTP 403.
      * Requirements: 5.3
      */
     @Test
@@ -219,7 +220,7 @@ class ResumeIntelligenceControllerIntegrationTest {
     void parseResume_asInterviewer_returnsDenied() throws Exception {
         mockMvc.perform(post("/api/v1/candidates/{candidateId}/parse-resume", candidateId)
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest());     // GlobalExceptionHandler maps RuntimeException → 400
+                .andExpect(status().isForbidden());     // GlobalExceptionHandler maps AccessDeniedException → 403
 
         // The service should never be called for a denied request
         verify(candidateRepository, never()).findById(any());
@@ -402,7 +403,7 @@ class ResumeIntelligenceControllerIntegrationTest {
                 "Alice Smith Python developer with updated skills. More than fifty characters here."
         );
         when(aiResumeExtractor.extract(any())).thenReturn(
-                new ResumeExtractionResult(List.of("Python", "FastAPI"), List.of())
+                new ResumeExtractionResult(List.of("Python", "FastAPI"), List.of(), List.of())
         );
         CandidateProfile newProfile = buildCandidateProfile(candidate, ProfileStatus.PARSED);
         when(candidateProfileRepository.save(any())).thenReturn(newProfile);
@@ -434,7 +435,7 @@ class ResumeIntelligenceControllerIntegrationTest {
                 "Alice Smith Go developer ready for re-parse after failure."
         );
         when(aiResumeExtractor.extract(any())).thenReturn(
-                new ResumeExtractionResult(List.of("Go", "Docker"), List.of())
+                new ResumeExtractionResult(List.of("Go", "Docker"), List.of(), List.of())
         );
         CandidateProfile newProfile = buildCandidateProfile(candidate, ProfileStatus.PARSED);
         when(candidateProfileRepository.save(any())).thenReturn(newProfile);
@@ -472,7 +473,7 @@ class ResumeIntelligenceControllerIntegrationTest {
                 "Alice Smith Kotlin developer for cache eviction test."
         );
         when(aiResumeExtractor.extract(any())).thenReturn(
-                new ResumeExtractionResult(List.of("Kotlin"), List.of())
+                new ResumeExtractionResult(List.of("Kotlin"), List.of(), List.of())
         );
         CandidateProfile newProfile = buildCandidateProfile(candidate, ProfileStatus.PARSED);
         when(candidateProfileRepository.save(any())).thenReturn(newProfile);
@@ -503,7 +504,8 @@ class ResumeIntelligenceControllerIntegrationTest {
         CandidateProfile profile = new CandidateProfile();
         profile.setId(UUID.randomUUID());
         profile.setCandidate(candidate);
-        profile.setSkills("Java, Spring Boot");
+        profile.setPrimarySkills("Java, Spring Boot");
+        profile.setSecondarySkills("");
         profile.setStatus(status);
         profile.setProjects(List.of());
         if (status == ProfileStatus.PARSED) {

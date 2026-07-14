@@ -20,7 +20,10 @@ public class CandidateProfile extends BaseEntity {
 
     // Stored as comma-separated values for simplicity (demo phase)
     @Column(length = 2000)
-    private String skills;
+    private String primarySkills;
+
+    @Column(length = 2000)
+    private String secondarySkills;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)

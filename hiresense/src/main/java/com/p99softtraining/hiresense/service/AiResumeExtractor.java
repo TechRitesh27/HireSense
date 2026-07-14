@@ -13,9 +13,12 @@ import java.util.List;
 public class AiResumeExtractor {
 
     static final String SYSTEM_PROMPT =
-            "Extract skills and projects from resume text. Return JSON with 'skills' array and 'projects' array " +
-            "(each with 'name', 'techStack', 'description'). Do not include candidate name, email, or phone number.";
-
+            "Extract skills and projects from resume text. " +
+            "Return JSON with 'primarySkills' array (core/primary technical skills which match the candidate profile and seems as mostly matched to him), " +
+            "'secondarySkills' array (secondary/supporting skills other than primary. Primary skills should be limited but highly related ), " +
+            "and 'projects' array (each with 'name', 'techStack', 'description'). " +
+            "Example: { \"primarySkills\": [...], \"secondarySkills\": [...], \"projects\": [...] }. " +
+            "Do not include candidate name, email, or phone number. Also don't add any extra skills by your own.";
     private final ChatClient chatClient;
 
     public ResumeExtractionResult extract(String resumeText) {
@@ -50,15 +53,22 @@ public class AiResumeExtractor {
         if (result == null) {
             return true;
         }
-        boolean noSkills = result.skills() == null || result.skills().isEmpty();
+        boolean noPrimarySkills = result.primarySkills() == null || result.primarySkills().isEmpty();
+        boolean noSecondarySkills = result.secondarySkills() == null || result.secondarySkills().isEmpty();
         boolean noProjects = result.projects() == null || result.projects().isEmpty();
-        return noSkills && noProjects;
+        return noPrimarySkills && noSecondarySkills && noProjects;
     }
 
     private ResumeExtractionResult filter(ResumeExtractionResult result) {
-        List<String> filteredSkills = result.skills() == null
+        List<String> filteredPrimarySkills = result.primarySkills() == null
                 ? List.of()
-                : result.skills().stream()
+                : result.primarySkills().stream()
+                        .filter(s -> s != null && !s.isBlank())
+                        .toList();
+
+        List<String> filteredSecondarySkills = result.secondarySkills() == null
+                ? List.of()
+                : result.secondarySkills().stream()
                         .filter(s -> s != null && !s.isBlank())
                         .toList();
 
@@ -68,6 +78,6 @@ public class AiResumeExtractor {
                         .filter(p -> p != null && p.name() != null && !p.name().isBlank())
                         .toList();
 
-        return new ResumeExtractionResult(filteredSkills, filteredProjects);
+        return new ResumeExtractionResult(filteredPrimarySkills, filteredSecondarySkills, filteredProjects);
     }
 }

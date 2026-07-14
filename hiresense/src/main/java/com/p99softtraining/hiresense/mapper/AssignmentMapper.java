@@ -34,21 +34,14 @@ public class AssignmentMapper {
         Candidate candidate = assignment.getCandidate();
         HiringDrive hiringDrive = assignment.getHiringDrive();
 
-
         return AssignedCandidateResponse.builder()
-                .assignmentId(assignment.getId())
                 .candidateId(candidate.getId())
-                .hiringDriveId(hiringDrive.getId())
-                .hiringDriveTitle(hiringDrive.getTitle())
                 .fullName(candidate.getFullName())
                 .email(candidate.getEmail())
-                .phone(candidate.getPhone())
-                .collegeName(candidate.getCollegeName())
-                .degree(candidate.getDegree())
-                .branch(candidate.getBranch())
-                .graduationYear(candidate.getGraduationYear())
-                .resumeUrl(candidate.getResumeUrl())
-                .status(candidate.getStatus())
+                .hiringDriveId(hiringDrive.getId())
+                .hiringDriveName(hiringDrive.getTitle())
+                .sessionId(null)
+                .sessionStatus(null)
                 .build();
     }
 }

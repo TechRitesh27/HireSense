@@ -11,8 +11,8 @@ import lombok.Setter;
         name = "evaluation_results",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_eval_result_candidate_drive",
-                        columnNames = {"candidate_id", "hiring_drive_id"}
+                        name = "uk_eval_result_candidate_drive_round",
+                        columnNames = {"candidate_id", "hiring_drive_id", "interview_round_id"}
                 )
         }
 )
@@ -26,6 +26,10 @@ public class EvaluationResult extends BaseEntity {
     @JoinColumn(name = "hiring_drive_id", nullable = false)
     private HiringDrive hiringDrive;
 
+    @ManyToOne(optional = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "interview_round_id")
+    private InterviewRound interviewRound;
+
     @Column(nullable = false)
-    private int totalScore = 0;
+    private Double totalScore = 0.0;
 }

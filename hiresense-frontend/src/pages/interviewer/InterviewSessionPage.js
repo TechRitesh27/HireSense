@@ -1,19 +1,49 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box, Typography, Accordion, AccordionSummary, AccordionDetails,
-  Checkbox, FormControlLabel, TextField, Slider, Chip, Stack,
-  Button, CircularProgress, Alert, Dialog, DialogTitle,
-  DialogContent, DialogActions, Divider, LinearProgress,
-  Card, CardContent, IconButton, Tooltip,
+  TextField, Chip, Stack, Button, CircularProgress, Alert, Dialog,
+  DialogTitle, DialogContent, DialogActions, Divider, LinearProgress,
+  ToggleButton, ToggleButtonGroup, MenuItem,
 } from '@mui/material';
 import {
-  ExpandMore, CheckCircle, Send, ArrowBack,
+  ExpandMore, CheckCircle, Send, ArrowBack, Add,
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import InterviewerLayout from '../../components/InterviewerLayout';
-import { getSession, markKeyPoints, evaluateQuestion, submitSession } from '../../api/sessionApi';
+import { getSession, evaluateQuestion, submitSession, addCustomQuestion } from '../../api/sessionApi';
+import { getCandidateWorkflowHint, getCandidateWorkflowLabel } from '../../utils/interviewWorkflow';
 
 const DIFFICULTY_COLORS = { EASY: 'success', MEDIUM: 'warning', HARD: 'error' };
+const DIFFICULTY_LEVELS = ['EASY', 'MEDIUM', 'HARD'];
+
+const VERDICT_LABELS = {
+  GOOD: { label: 'Good', color: 'success' },
+  AVERAGE: { label: 'Average', color: 'warning' },
+  POOR: { label: 'Poor', color: 'error' },
+};
+
+function VerdictSelector({ value, onChange, disabled }) {
+  return (
+    <ToggleButtonGroup
+      value={value || null}
+      exclusive
+      onChange={(_, v) => { if (v !== null) onChange(v); }}
+      size="small"
+      disabled={disabled}
+    >
+      {Object.entries(VERDICT_LABELS).map(([key, { label, color }]) => (
+        <ToggleButton
+          key={key}
+          value={key}
+          color={color}
+          sx={{ minWidth: 80, fontWeight: value === key ? 700 : 400 }}
+        >
+          {label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+}
 
 function InterviewSessionPage() {
   const { sessionId } = useParams();
@@ -27,20 +57,30 @@ function InterviewSessionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  // Local eval state: { [questionId]: { notes: '', score: 0 } }
+  // Per-question local eval state: { [questionId]: { notes: '', verdict: null } }
   const [evalState, setEvalState] = useState({});
+
+  // Custom question dialog
+  const [customDialog, setCustomDialog] = useState(false);
+  const [customForm, setCustomForm] = useState({ questionText: '', difficultyLevel: 'MEDIUM' });
+  const [addingCustom, setAddingCustom] = useState(false);
 
   const fetchSession = useCallback(async () => {
     try {
       const res = await getSession(sessionId);
-      setSession(res.data);
+      const s = res.data;
+      setSession(s);
 
-      // Init eval state for each question
-      const init = {};
-      res.data.questions?.forEach((q) => {
-        init[q.id] = { notes: '', score: 0 };
+      // Seed eval state from server-side data (notes/verdict already persisted)
+      setEvalState((prev) => {
+        const next = { ...prev };
+        s.questions?.forEach((q) => {
+          if (!next[q.id]) {
+            next[q.id] = { notes: q.notes || '', verdict: q.verdict || null };
+          }
+        });
+        return next;
       });
-      setEvalState((prev) => ({ ...init, ...prev }));
     } catch {
       setError('Failed to load session.');
     } finally {
@@ -52,36 +92,54 @@ function InterviewSessionPage() {
 
   const isCompleted = session?.status === 'COMPLETED';
 
-  // Toggle a single key point
-  const handleKeyPointToggle = async (questionId, kpId, currentlyCovered) => {
+  const handleEvalSave = async (questionId) => {
     if (isCompleted) return;
+    const ev = evalState[questionId];
+    if (!ev?.verdict) return; // verdict is required
     setSaving(true);
     try {
-      // We only send newly covered points — backend marks them covered
-      // For uncovering, we reload session to reflect DB state
-      if (!currentlyCovered) {
-        await markKeyPoints(sessionId, questionId, [kpId]);
-      }
-      await fetchSession();
-    } catch (err) {
-      setError(err.response?.data || 'Failed to save key point.');
+      await evaluateQuestion(sessionId, questionId, {
+        notes: ev.notes,
+        verdict: ev.verdict,
+      });
+    } catch {
+      // non-blocking save — errors surfaced on submit if needed
     } finally {
       setSaving(false);
     }
   };
 
-  // Save notes + score on blur
-  const handleEvalSave = async (questionId) => {
+  const handleVerdictChange = async (questionId, verdict) => {
     if (isCompleted) return;
-    const ev = evalState[questionId];
-    if (!ev) return;
+    setEvalState((prev) => ({ ...prev, [questionId]: { ...prev[questionId], verdict } }));
+    setSaving(true);
     try {
       await evaluateQuestion(sessionId, questionId, {
-        evaluatorNotes: ev.notes,
-        additionalScore: ev.score,
+        notes: evalState[questionId]?.notes || '',
+        verdict,
       });
     } catch {
-      // non-blocking — show subtle error if needed
+      // non-blocking
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddCustomQuestion = async () => {
+    if (!customForm.questionText.trim()) return;
+    setAddingCustom(true);
+    try {
+      await addCustomQuestion(sessionId, {
+        questionText: customForm.questionText.trim(),
+        difficultyLevel: customForm.difficultyLevel,
+      });
+      setCustomForm({ questionText: '', difficultyLevel: 'MEDIUM' });
+      setCustomDialog(false);
+      await fetchSession();
+    } catch (err) {
+      setError(err.response?.data || 'Failed to add question.');
+    } finally {
+      setAddingCustom(false);
     }
   };
 
@@ -99,16 +157,14 @@ function InterviewSessionPage() {
     }
   };
 
-  // Group questions by difficulty
   const grouped = session?.questions?.reduce((acc, q) => {
     acc[q.difficultyLevel] = acc[q.difficultyLevel] || [];
     acc[q.difficultyLevel].push(q);
     return acc;
   }, {}) || {};
 
-  const totalKeyPoints = session?.questions?.flatMap((q) => q.keyPoints).length || 0;
-  const coveredKeyPoints = session?.questions?.flatMap((q) => q.keyPoints).filter((kp) => kp.covered).length || 0;
-  const progress = totalKeyPoints > 0 ? Math.round((coveredKeyPoints / totalKeyPoints) * 100) : 0;
+  const evaluatedCount = session?.questions?.filter((q) => q.verdict).length || 0;
+  const totalCount = session?.questions?.length || 0;
 
   if (loading) {
     return (
@@ -136,30 +192,47 @@ function InterviewSessionPage() {
             <Typography variant="h5">{session?.candidateFullName}</Typography>
             <Typography variant="body2" color="text.secondary">
               Round: <b>{session?.interviewRoundName}</b>
+              {session?.difficultyLevel && (
+                <> · <Chip label={session.difficultyLevel} color={DIFFICULTY_COLORS[session.difficultyLevel]} size="small" sx={{ ml: 0.5 }} /></>
+              )}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              Workflow: {getCandidateWorkflowLabel('INTERVIEW_IN_PROGRESS')} · {getCandidateWorkflowHint('INTERVIEW_IN_PROGRESS')}
             </Typography>
           </Box>
-          <Chip
-            label={session?.status}
-            color={session?.status === 'COMPLETED' ? 'success' : 'warning'}
-            icon={session?.status === 'COMPLETED' ? <CheckCircle /> : undefined}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {isCompleted && session?.sessionScore != null && (
+              <Chip label={`Score: ${session.sessionScore}`} color="success" variant="outlined" />
+            )}
+            <Chip
+              label={session?.status}
+              color={session?.status === 'COMPLETED' ? 'success' : 'warning'}
+              icon={session?.status === 'COMPLETED' ? <CheckCircle /> : undefined}
+            />
+          </Box>
         </Box>
 
-        {/* Progress bar */}
-        <Box sx={{ mt: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">Key Points Covered</Typography>
-            <Typography variant="caption" color="text.secondary">{coveredKeyPoints}/{totalKeyPoints}</Typography>
+        {/* Evaluation progress */}
+        {!isCompleted && (
+          <Box sx={{ mt: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">Questions Evaluated</Typography>
+              <Typography variant="caption" color="text.secondary">{evaluatedCount}/{totalCount}</Typography>
+            </Box>
+            <LinearProgress
+              variant="determinate"
+              value={totalCount > 0 ? Math.round((evaluatedCount / totalCount) * 100) : 0}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
           </Box>
-          <LinearProgress variant="determinate" value={progress} sx={{ height: 8, borderRadius: 4 }} />
-        </Box>
+        )}
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       {submitted && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          Session submitted successfully! The candidate's score has been calculated.
+          Session submitted. Score: <b>{session?.sessionScore ?? 0}</b> / 100
         </Alert>
       )}
 
@@ -177,129 +250,124 @@ function InterviewSessionPage() {
             </Box>
 
             <Stack spacing={1.5}>
-              {grouped[level].map((q, idx) => (
-                <Accordion key={q.id} variant="outlined" defaultExpanded={level === 'EASY'}>
-                  <AccordionSummary expandIcon={<ExpandMore />}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%', pr: 1 }}>
-                      <Typography variant="body2" fontWeight={500} sx={{ flex: 1 }}>
-                        {idx + 1}. {q.questionText}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                        {q.keyPoints?.filter((kp) => kp.covered).length}/{q.keyPoints?.length} pts
-                      </Typography>
-                    </Box>
-                  </AccordionSummary>
-
-                  <AccordionDetails>
-                    {/* Key Points */}
-                    <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
-                      KEY POINTS
-                    </Typography>
-                    <Stack spacing={0.5} sx={{ mb: 2 }}>
-                      {q.keyPoints?.map((kp) => (
-                        <FormControlLabel
-                          key={kp.id}
-                          control={
-                            <Checkbox
-                              checked={kp.covered}
-                              onChange={() => handleKeyPointToggle(q.id, kp.id, kp.covered)}
-                              disabled={isCompleted || kp.covered} // covered points lock
+              {grouped[level].map((q, idx) => {
+                const ev = evalState[q.id] || {};
+                const isEvaluated = !!ev.verdict;
+                return (
+                  <Accordion key={q.id} variant="outlined" defaultExpanded={!isCompleted && level === 'EASY'}>
+                    <AccordionSummary expandIcon={<ExpandMore />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%', pr: 1 }}>
+                        <Typography variant="body2" fontWeight={500} sx={{ flex: 1 }}>
+                          {idx + 1}. {q.questionText}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          {q.source === 'CUSTOM' && (
+                            <Chip label="Custom" size="small" variant="outlined" />
+                          )}
+                          {q.skill && (
+                            <Chip label={q.skill} size="small" variant="outlined" color="info" />
+                          )}
+                          {isEvaluated && (
+                            <Chip
+                              label={VERDICT_LABELS[ev.verdict]?.label}
+                              color={VERDICT_LABELS[ev.verdict]?.color}
                               size="small"
-                              color="success"
                             />
-                          }
-                          label={
-                            <Typography
-                              variant="body2"
-                              sx={{ textDecoration: kp.covered ? 'line-through' : 'none', color: kp.covered ? 'text.disabled' : 'text.primary' }}
-                            >
-                              {kp.pointText}
-                            </Typography>
-                          }
+                          )}
+                        </Box>
+                      </Box>
+                    </AccordionSummary>
+
+                    <AccordionDetails>
+                      {/* Verdict */}
+                      <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                        VERDICT
+                      </Typography>
+                      <Box sx={{ mb: 2 }}>
+                        <VerdictSelector
+                          value={ev.verdict}
+                          onChange={(v) => handleVerdictChange(q.id, v)}
+                          disabled={isCompleted}
                         />
-                      ))}
-                    </Stack>
+                        {!isCompleted && !ev.verdict && (
+                          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+                            Select a verdict to record this evaluation
+                          </Typography>
+                        )}
+                      </Box>
 
-                    <Divider sx={{ my: 1.5 }} />
+                      <Divider sx={{ my: 1.5 }} />
 
-                    {/* Evaluator Notes */}
-                    <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
-                      EVALUATOR NOTES
-                    </Typography>
-                    <TextField
-                      multiline
-                      rows={2}
-                      fullWidth
-                      size="small"
-                      placeholder="Add your observations about the candidate's answer..."
-                      value={evalState[q.id]?.notes || ''}
-                      onChange={(e) =>
-                        setEvalState((prev) => ({
-                          ...prev,
-                          [q.id]: { ...prev[q.id], notes: e.target.value },
-                        }))
-                      }
-                      onBlur={() => handleEvalSave(q.id)}
-                      disabled={isCompleted}
-                      sx={{ mb: 2 }}
-                    />
-
-                    {/* Additional Score */}
-                    <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 0.5 }}>
-                      ADDITIONAL SCORE: {evalState[q.id]?.score || 0}/10
-                    </Typography>
-                    <Slider
-                      value={evalState[q.id]?.score || 0}
-                      min={0}
-                      max={10}
-                      step={1}
-                      marks
-                      valueLabelDisplay="auto"
-                      onChange={(_, val) =>
-                        setEvalState((prev) => ({
-                          ...prev,
-                          [q.id]: { ...prev[q.id], score: val },
-                        }))
-                      }
-                      onChangeCommitted={() => handleEvalSave(q.id)}
-                      disabled={isCompleted}
-                      color="primary"
-                      sx={{ maxWidth: 320 }}
-                    />
-                  </AccordionDetails>
-                </Accordion>
-              ))}
+                      {/* Notes */}
+                      <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ display: 'block', mb: 1 }}>
+                        NOTES
+                      </Typography>
+                      <TextField
+                        multiline
+                        rows={2}
+                        fullWidth
+                        size="small"
+                        placeholder="Add your observations about the candidate's answer..."
+                        value={ev.notes || ''}
+                        onChange={(e) =>
+                          setEvalState((prev) => ({
+                            ...prev,
+                            [q.id]: { ...prev[q.id], notes: e.target.value },
+                          }))
+                        }
+                        onBlur={() => handleEvalSave(q.id)}
+                        disabled={isCompleted}
+                      />
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
             </Stack>
           </Box>
         ) : null
       )}
 
-      {/* Submit button */}
-      {!isCompleted && session?.questions?.length > 0 && (
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+      {/* Bottom action bar */}
+      {!isCompleted && (
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
           <Button
-            variant="contained"
-            size="large"
-            color="success"
-            startIcon={<Send />}
-            onClick={() => setConfirmOpen(true)}
+            variant="outlined"
+            startIcon={<Add />}
+            onClick={() => setCustomDialog(true)}
           >
-            Submit Interview
+            Add Custom Question
           </Button>
+
+          {totalCount > 0 && (
+            <Button
+              variant="contained"
+              size="large"
+              color="success"
+              startIcon={<Send />}
+              onClick={() => setConfirmOpen(true)}
+            >
+              Submit Interview
+            </Button>
+          )}
         </Box>
       )}
 
-      {/* Confirm dialog */}
+      {/* Confirm Submit dialog */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Submit Interview Session?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            Once submitted, you cannot modify key points, notes, or scores. The candidate's score will be calculated automatically.
+            Once submitted, you cannot add questions or change evaluations. The candidate's score will be calculated automatically.
           </Typography>
           <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
             <Typography variant="body2">
-              Key points covered: <b>{coveredKeyPoints}/{totalKeyPoints}</b>
+              Evaluated: <b>{evaluatedCount}/{totalCount}</b> questions
             </Typography>
+            {evaluatedCount < totalCount && (
+              <Typography variant="caption" color="text.secondary">
+                Unevaluated questions will not contribute to the score.
+              </Typography>
+            )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -311,6 +379,45 @@ function InterviewSessionPage() {
             disabled={submitting}
           >
             {submitting ? <CircularProgress size={18} color="inherit" /> : 'Confirm Submit'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Custom Question dialog */}
+      <Dialog open={customDialog} onClose={() => !addingCustom && setCustomDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add Custom Question</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Question Text"
+              multiline
+              rows={3}
+              fullWidth
+              value={customForm.questionText}
+              onChange={(e) => setCustomForm((p) => ({ ...p, questionText: e.target.value }))}
+              placeholder="Type your question here..."
+            />
+            <TextField
+              select
+              label="Difficulty Level"
+              fullWidth
+              value={customForm.difficultyLevel}
+              onChange={(e) => setCustomForm((p) => ({ ...p, difficultyLevel: e.target.value }))}
+            >
+              {DIFFICULTY_LEVELS.map((d) => (
+                <MenuItem key={d} value={d}>{d}</MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCustomDialog(false)} disabled={addingCustom}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleAddCustomQuestion}
+            disabled={addingCustom || !customForm.questionText.trim()}
+          >
+            {addingCustom ? <CircularProgress size={18} color="inherit" /> : 'Add Question'}
           </Button>
         </DialogActions>
       </Dialog>

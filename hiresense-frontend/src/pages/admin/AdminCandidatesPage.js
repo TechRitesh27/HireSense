@@ -16,6 +16,8 @@ import AdminLayout from '../../components/AdminLayout';
 import { getCandidates, createCandidate, uploadCandidatesExcel, importCandidatesFromUrl } from '../../api/candidateApi';
 import { assignInterviewers } from '../../api/assignmentApi';
 import { getInterviewers } from '../../api/userApi';
+import { getRounds } from '../../api/roundApi';
+import { getCandidateWorkflowColor, getCandidateWorkflowHint, getCandidateWorkflowLabel } from '../../utils/interviewWorkflow';
 
 const STATUS_COLORS = {
   IMPORTED: 'default',
@@ -54,6 +56,10 @@ function AdminCandidatesPage() {
   const [interviewersLoading, setInterviewersLoading] = useState(false);
   const [selectedInterviewerIds, setSelectedInterviewerIds] = useState([]);
 
+  // Rounds list for assign dialog
+  const [rounds, setRounds] = useState([]);
+  const [selectedRoundId, setSelectedRoundId] = useState('');
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
   const fetchCandidates = async () => {
@@ -74,18 +80,22 @@ function AdminCandidatesPage() {
   const openAssignDialog = async (candidate) => {
     setSelectedCandidate(candidate);
     setSelectedInterviewerIds([]);
+    setSelectedRoundId('');
     setAssignOpen(true);
 
-    if (interviewers.length === 0) {
-      setInterviewersLoading(true);
-      try {
-        const res = await getInterviewers();
-        setInterviewers(res.data);
-      } catch {
-        setError('Failed to load interviewers.');
-      } finally {
-        setInterviewersLoading(false);
-      }
+    setInterviewersLoading(true);
+    try {
+      const [ivRes, roundRes] = await Promise.all([
+        interviewers.length === 0 ? getInterviewers() : Promise.resolve({ data: interviewers }),
+        getRounds(hiringDriveId),
+      ]);
+      setInterviewers(ivRes.data);
+      setRounds(roundRes.data);
+      if (roundRes.data.length > 0) setSelectedRoundId(roundRes.data[0].id);
+    } catch {
+      setError('Failed to load interviewers or rounds.');
+    } finally {
+      setInterviewersLoading(false);
     }
   };
 
@@ -144,13 +154,14 @@ function AdminCandidatesPage() {
   };
 
   const handleAssign = async () => {
-    if (!selectedInterviewerIds.length || !selectedCandidate) return;
+    if (!selectedInterviewerIds.length || !selectedCandidate || !selectedRoundId) return;
     setSubmitting(true);
     try {
-      await assignInterviewers(hiringDriveId, selectedCandidate.id, selectedInterviewerIds);
+      await assignInterviewers(hiringDriveId, selectedCandidate.id, selectedInterviewerIds, selectedRoundId);
       setSuccess('Interviewer(s) assigned successfully.');
       setAssignOpen(false);
       setSelectedInterviewerIds([]);
+      setSelectedRoundId('');
       fetchCandidates();
     } catch (err) {
       setError(err.response?.data || 'Assignment failed.');
@@ -162,6 +173,7 @@ function AdminCandidatesPage() {
   const closeAssignDialog = () => {
     setAssignOpen(false);
     setSelectedInterviewerIds([]);
+    setSelectedRoundId('');
   };
 
   return (
@@ -228,7 +240,13 @@ function AdminCandidatesPage() {
                     <TableCell>{c.collegeName}</TableCell>
                     <TableCell>{c.branch}</TableCell>
                     <TableCell>
-                      <Chip label={c.status} color={STATUS_COLORS[c.status] || 'default'} size="small" />
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Chip label={c.status} color={STATUS_COLORS[c.status] || 'default'} size="small" />
+                        <Chip label={getCandidateWorkflowLabel(c.status)} color={getCandidateWorkflowColor(c.status)} size="small" variant="outlined" />
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        {getCandidateWorkflowHint(c.status)}
+                      </Typography>
                     </TableCell>
                     <TableCell align="center">
                       <Tooltip title="Assign Interviewer">
@@ -236,7 +254,7 @@ function AdminCandidatesPage() {
                           <PersonAddAlt fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="View Profile & Questions">
+                      <Tooltip title="Open candidate workflow details">
                         <IconButton
                           size="small"
                           onClick={() => navigate(`/admin/candidates/${c.id}`, {
@@ -361,44 +379,71 @@ function AdminCandidatesPage() {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
               <CircularProgress size={24} />
             </Box>
-          ) : interviewers.length === 0 ? (
-            <Alert severity="warning">
-              No interviewers found in this company. Add interviewers first.
-            </Alert>
           ) : (
-            <FormControl fullWidth size="small">
-              <InputLabel>Select Interviewer(s)</InputLabel>
-              <Select
-                multiple
-                value={selectedInterviewerIds}
-                onChange={(e) => setSelectedInterviewerIds(e.target.value)}
-                input={<OutlinedInput label="Select Interviewer(s)" />}
-                renderValue={(selected) => (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {selected.map((id) => {
-                      const iv = interviewers.find((i) => i.id === id);
-                      return <Chip key={id} label={iv?.fullName || id} size="small" />;
-                    })}
-                  </Box>
-                )}
-              >
-                {interviewers.map((iv) => (
-                  <MenuItem key={iv.id} value={iv.id}>
-                    <ListItemAvatar sx={{ minWidth: 36 }}>
-                      <Avatar sx={{ width: 28, height: 28, fontSize: 13, bgcolor: 'secondary.light' }}>
-                        {iv.fullName[0]}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={iv.fullName}
-                      secondary={iv.email}
-                      primaryTypographyProps={{ variant: 'body2' }}
-                      secondaryTypographyProps={{ variant: 'caption' }}
-                    />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Stack spacing={2}>
+              {/* Round selector */}
+              {rounds.length === 0 ? (
+                <Alert severity="warning">
+                  No rounds configured for this hiring drive. Add a round first.
+                </Alert>
+              ) : (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Interview Round</InputLabel>
+                  <Select
+                    value={selectedRoundId}
+                    onChange={(e) => setSelectedRoundId(e.target.value)}
+                    input={<OutlinedInput label="Interview Round" />}
+                  >
+                    {rounds.map((r) => (
+                      <MenuItem key={r.id} value={r.id}>
+                        {r.name} ({r.roundType})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+
+              {/* Interviewer selector */}
+              {interviewers.length === 0 ? (
+                <Alert severity="warning">
+                  No interviewers found in this company. Add interviewers first.
+                </Alert>
+              ) : (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Interviewer(s)</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedInterviewerIds}
+                    onChange={(e) => setSelectedInterviewerIds(e.target.value)}
+                    input={<OutlinedInput label="Select Interviewer(s)" />}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((id) => {
+                          const iv = interviewers.find((i) => i.id === id);
+                          return <Chip key={id} label={iv?.fullName || id} size="small" />;
+                        })}
+                      </Box>
+                    )}
+                  >
+                    {interviewers.map((iv) => (
+                      <MenuItem key={iv.id} value={iv.id}>
+                        <ListItemAvatar sx={{ minWidth: 36 }}>
+                          <Avatar sx={{ width: 28, height: 28, fontSize: 13, bgcolor: 'secondary.light' }}>
+                            {iv.fullName[0]}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={iv.fullName}
+                          secondary={iv.email}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                          secondaryTypographyProps={{ variant: 'caption' }}
+                        />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            </Stack>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -406,7 +451,7 @@ function AdminCandidatesPage() {
           <Button
             variant="contained"
             onClick={handleAssign}
-            disabled={!selectedInterviewerIds.length || submitting}
+            disabled={!selectedInterviewerIds.length || !selectedRoundId || submitting}
           >
             {submitting ? <CircularProgress size={18} /> : `Assign (${selectedInterviewerIds.length})`}
           </Button>

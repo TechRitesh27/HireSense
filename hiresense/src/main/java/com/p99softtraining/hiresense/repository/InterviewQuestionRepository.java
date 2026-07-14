@@ -10,10 +10,7 @@ import java.util.UUID;
 @Repository
 public interface InterviewQuestionRepository extends JpaRepository<InterviewQuestion, UUID> {
 
-    List<InterviewQuestion> findByCandidateIdAndInterviewRoundIdOrderByDifficultyLevel(
-            UUID candidateId, UUID interviewRoundId);
+    List<InterviewQuestion> findByInterviewSessionIdOrderByDifficultyLevel(UUID interviewSessionId);
 
-    void deleteByCandidateIdAndInterviewRoundId(UUID candidateId, UUID interviewRoundId);
-
-    boolean existsByCandidateIdAndInterviewRoundId(UUID candidateId, UUID interviewRoundId);
+    List<InterviewQuestion> findByInterviewSessionId(UUID interviewSessionId);
 }

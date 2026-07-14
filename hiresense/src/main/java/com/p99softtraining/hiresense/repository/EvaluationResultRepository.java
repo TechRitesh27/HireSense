@@ -13,5 +13,11 @@ public interface EvaluationResultRepository extends JpaRepository<EvaluationResu
 
     Optional<EvaluationResult> findByCandidateIdAndHiringDriveId(UUID candidateId, UUID hiringDriveId);
 
+    Optional<EvaluationResult> findByCandidateIdAndHiringDriveIdAndInterviewRoundId(
+            UUID candidateId, UUID hiringDriveId, UUID interviewRoundId);
+
     List<EvaluationResult> findByHiringDriveIdOrderByTotalScoreDesc(UUID hiringDriveId);
+
+    List<EvaluationResult> findByHiringDriveIdAndInterviewRoundIdOrderByTotalScoreDesc(
+            UUID hiringDriveId, UUID interviewRoundId);
 }
